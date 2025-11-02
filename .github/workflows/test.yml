@@ -45,38 +45,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install vfox (Windows)
-        uses: MinoruSekine/setup-scoop@v4.0.2
-        if: runner.os == 'Windows'
-        with:
-          apps: vfox
+      - name: Install mise and .tool-versions
+        uses: jdx/mise-action@v2
 
-      - name: Install vfox (Linux and macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
-            sudo apt-get update
-            sudo apt-get install -y vfox
-          else
-            brew tap version-fox/tap
-            brew install vfox
-          fi
-
-      - name: Install tools (Windows)
+      - name: Install lua tools (Windows)
         if: runner.os == 'Windows'
         run: |
-          vfox.exe install --all --yes
-          luarocks.exe --lua-version 5.1 install busted
-          luarocks.exe --lua-version 5.1 install luacheck
+          mise exec -- luarocks.exe --lua-version 5.1 install busted
+          mise exec -- luarocks.exe --lua-version 5.1 install luacheck
 
-      - name: Install tools (Linux and macOS)
+      - name: Install lua tools (Linux and macOS)
         if: runner.os != 'Windows'
         run: |
-          vfox install --all --yes
-          luarocks --lua-version 5.1 install busted
-          luarocks --lua-version 5.1 install luacheck
+          mise exec -- luarocks --lua-version 5.1 install busted
+          mise exec -- luarocks --lua-version 5.1 install luacheck
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -99,37 +81,21 @@ jobs:
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
-
-      - name: Install vfox (Windows)
-        uses: MinoruSekine/setup-scoop@v4.0.2
-        if: runner.os == 'Windows'
         with:
-          apps: vfox
+          fetch-depth: 0
 
-      - name: Install vfox (Linux and macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
-            sudo apt-get update
-            sudo apt-get install -y vfox
-          else
-            brew tap version-fox/tap
-            brew install vfox
-          fi
+      - name: Install mise and .tool-versions
+        uses: jdx/mise-action@v2
 
-      - name: Install tools (Windows)
+      - name: Install lua tools (Windows)
         if: runner.os == 'Windows'
         run: |
-          vfox.exe install --all --yes
           luarocks.exe --lua-version 5.1 install busted
           luarocks.exe --lua-version 5.1 install luacheck
 
-      - name: Install tools (Linux and macOS)
+      - name: Install lua tools (Linux and macOS)
         if: runner.os != 'Windows'
         run: |
-          vfox install --all --yes
           luarocks --lua-version 5.1 install busted
           luarocks --lua-version 5.1 install luacheck
 
@@ -151,6 +117,8 @@ jobs:
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
@@ -188,6 +156,8 @@ jobs:
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Install vfox and .tool-versions (Windows)
         uses: MinoruSekine/setup-scoop@v4.0.2
