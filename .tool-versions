@@ -1,0 +1,5 @@
+# vfox & mise tool versions
+# Use Lua 5.1 to match vfox's gopher-lua (Lua 5.1 implementation)
+lua 5.1
+stylua 2.3.1
+actionlint latest

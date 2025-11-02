@@ -18,7 +18,7 @@ PLUGIN = {
     -- Optional: Repository URL for plugin updates
     updateUrl = "https://github.com/elijahr/vfox-nim",
 
-    -- Optional: Minimum mise runtime version required
+    -- Optional: Minimum vfox runtime version required
     minRuntimeVersion = "0.2.0",
 
     -- Optional: Legacy version files this plugin can parse

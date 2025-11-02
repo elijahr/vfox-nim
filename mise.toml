@@ -1,21 +1,13 @@
 [env]
 MISE_USE_VERSIONS_HOST = "0"
 
-[tools]
-actionlint = "latest"
-hk = "latest"
-# Use Lua 5.1 to match vfox's gopher-lua (Lua 5.1 implementation)
-lua = "5.1"
-pkl = "latest"
-stylua = "latest"
-
 [tasks.format]
 description = "Format Lua scripts"
-run = "stylua metadata.lua hooks/"
+run = "pre-commit run --all-files"
 
 [tasks.lint]
 description = "Lint Lua scripts and GitHub Actions using hk"
-run = "hk check"
+run = "pre-commit run --show-diff-on-failure --all-files"
 
 [tasks.ci]
 description = "Run all CI checks"

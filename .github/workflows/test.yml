@@ -40,17 +40,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install Stylua
-        uses: JohnnyMorganz/stylua-action@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: 2.3.1
-          args: false # Install only
-
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Install vfox (Windows)
+        uses: MinoruSekine/setup-scoop@v4.0.2
+        if: runner.os == 'Windows'
+        with:
+          apps: vfox
+
+      - name: Install vfox (Linux and macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
+            sudo apt-get update
+            sudo apt-get install -y vfox
+          else
+            brew tap version-fox/tap
+            brew install vfox
+          fi
+
+      - name: Install tools (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vfox.exe install --all --yes
+          luarocks.exe --lua-version 5.1 install busted
+          luarocks.exe --lua-version 5.1 install luacheck
+
+      - name: Install tools (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          vfox install --all --yes
+          luarocks --lua-version 5.1 install busted
+          luarocks --lua-version 5.1 install luacheck
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -63,63 +89,6 @@ jobs:
   # Test Lua plugin implementation
   lua_tests:
     name: Lua unit tests / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout plugin
-        uses: actions/checkout@v5
-
-      - name: Install Lua and dependencies
-        run: |
-          sudo apt-get update
-          # Install Lua 5.1 to match vfox's embedded gopher-lua (Lua 5.1)
-          # and Lua 5.4 to match mise's embedded mlua (Lua 5.4)
-          sudo apt-get install -y lua5.1 liblua5.1-0-dev lua5.4 liblua5.4-dev luarocks
-          # Use Lua 5.1 for testing since it's the lowest common denominator
-          # (vfox uses gopher-lua which implements Lua 5.1)
-          sudo luarocks --lua-version 5.1 install busted
-          sudo luarocks --lua-version 5.1 install luacheck
-
-      - name: Run Lua linting
-        run: luacheck .
-
-      - name: Run Lua unit tests
-        run: |
-          # Test with Lua 5.1 (vfox compatibility - gopher-lua)
-          lua5.1 "$(which busted)" spec/ -v
-
-  # Test mise integration (with integration test script)
-  mise_integration_test:
-    name: Mise integration tests / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout plugin
-        uses: actions/checkout@v5
-
-      - name: Install mise
-        uses: jdx/mise-action@v2
-
-      - name: Run mise integration tests
-        shell: bash
-        run: |
-          bash test/mise-integration.sh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Test vfox integration (with integration test script)
-  vfox_integration_test:
-    name: vfox integration tests / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -150,9 +119,110 @@ jobs:
             brew install vfox
           fi
 
+      - name: Install tools (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vfox.exe install --all --yes
+          luarocks.exe --lua-version 5.1 install busted
+          luarocks.exe --lua-version 5.1 install luacheck
+
+      - name: Install tools (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          vfox install --all --yes
+          luarocks --lua-version 5.1 install busted
+          luarocks --lua-version 5.1 install luacheck
+
+      - name: Run Lua unit tests
+        run: |
+          # Test with Lua 5.1 (vfox compatibility - gopher-lua)
+          lua5.1 "$(which busted)" spec/ -v
+
+  # Test mise integration (with integration test script)
+  mise_integration_test:
+    name: Mise integration tests / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v5
+
+      - name: Install mise and .tool-versions
+        uses: jdx/mise-action@v2
+
+      - name: Install Luarocks dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mise.exe exec -- luarocks.exe --lua-version 5.1 install busted
+          mise.exe exec -- luarocks.exe --lua-version 5.1 install luacheck
+
+      - name: Install Luarocks dependencies (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mise exec -- luarocks --lua-version 5.1 install busted
+          mise exec -- luarocks --lua-version 5.1 install luacheck
+
+      - name: Run mise integration tests
+        shell: bash
+        run: |
+          mise exec -- lua5.1 "$(which busted)" test/mise-integration_spec.lua -v
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISE_YES: 1
+
+  # Test vfox integration (with integration test script)
+  vfox_integration_test:
+    name: vfox integration tests / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v5
+
+      - name: Install vfox and .tool-versions (Windows)
+        uses: MinoruSekine/setup-scoop@v4.0.2
+        if: runner.os == 'Windows'
+        with:
+          apps: vfox
+
+      - name: Install vfox and .tool-versions (Linux and macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
+            sudo apt-get update
+            sudo apt-get install -y vfox
+          else
+            brew tap version-fox/tap
+            brew install vfox
+          fi
+
+      - name: Install Luarocks and busted (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          vfox.exe install --all --yes
+          luarocks.exe --lua-version 5.1 install busted
+
+      - name: Install Luarocks and busted (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          vfox install --all --yes
+          luarocks --lua-version 5.1 install busted
+
       - name: Run vfox integration tests
         shell: bash
         run: |
-          bash test/vfox-integration.sh
+          lua5.1 "$(which busted)" test/vfox-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
