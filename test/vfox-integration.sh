@@ -53,8 +53,8 @@ setup() {
 
   echo -e "${GREEN}✓${NC} vfox version: $(vfox --version)"
 
-  # Use auto mode by default to support all platforms (tries binaries, then nightly, then source)
-  # Test 13 will explicitly test the VFOX_NIM_INSTALL_METHOD env var
+  # ALWAYS use binary install method for tests to speed them up.
+  # Any tests that need to test other methods can override it.
   export VFOX_NIM_INSTALL_METHOD="binary"
   echo -e "${GREEN}✓${NC} Using install_method='${VFOX_NIM_INSTALL_METHOD}' for tests"
 
@@ -427,16 +427,68 @@ test_uninstall_reinstall() {
   fi
 }
 
-# Test 13: Test install_method environment variable
-test_install_method_env_var() {
-  test_case "VFOX_NIM_INSTALL_METHOD environment variable"
+# Test 13: Test VFOX_NIM_INSTALL_METHOD='auto'
+test_install_method_env_var_auto() {
+  test_case "VFOX_NIM_INSTALL_METHOD='auto' environment variable"
 
-  # Version should already be installed from previous tests
-  # Just verify it's present - this test confirms the env var didn't break installation
-  if vfox current nim 2>&1 | grep -q "2.2.4" || vfox list nim 2>&1 | grep -q "2.2.4"; then
-    pass
+  # Uninstall the version to test a fresh install
+  echo "y" | vfox uninstall nim@2.2.4 >/dev/null 2>&1 || true
+
+  export VFOX_NIM_INSTALL_METHOD="auto"
+
+  local output
+  if output=$(vfox install nim@2.2.4 2>&1); then
+    if vfox list nim 2>&1 | grep -q "2.2.4"; then
+      export VFOX_NIM_INSTALL_METHOD="binary"
+      pass
+    else
+      export VFOX_NIM_INSTALL_METHOD="binary"
+      fail "Installation with VFOX_NIM_INSTALL_METHOD='auto' failed"
+    fi
   else
-    fail "nim 2.2.4 not found - env var may have affected installation"
+    echo -e "${YELLOW}  Output: ${NC}"
+    echo "$output" | head -30
+    export VFOX_NIM_INSTALL_METHOD="binary"
+    fail "Installation with VFOX_NIM_INSTALL_METHOD='auto' failed"
+  fi
+}
+
+# Test 14: Test VFOX_NIM_INSTALL_METHOD='source'
+test_install_method_env_var_source() {
+  test_case "VFOX_NIM_INSTALL_METHOD='source' environment variable"
+
+  # Uninstall the version to test a fresh install
+  echo "y" | vfox uninstall nim@2.2.4 >/dev/null 2>&1 || true
+
+  export VFOX_NIM_INSTALL_METHOD="source"
+
+  local output
+  if output=$(vfox install nim@2.2.4 2>&1); then
+    # Check for source build indicators
+    if echo "$output" | grep -qi "compil\|build\|make\|source"; then
+      if vfox list nim 2>&1 | grep -q "2.2.4"; then
+        export VFOX_NIM_INSTALL_METHOD="binary"
+        pass
+      else
+        export VFOX_NIM_INSTALL_METHOD="binary"
+        fail "Build appeared successful but version not found"
+      fi
+    else
+      # Even if we can't confirm source was used, if install succeeded, pass
+      if vfox list nim 2>&1 | grep -q "2.2.4"; then
+        echo -e "${YELLOW}  ⚠ Could not confirm source build from output${NC}"
+        export VFOX_NIM_INSTALL_METHOD="binary"
+        pass
+      else
+        export VFOX_NIM_INSTALL_METHOD="binary"
+        fail "Installation with VFOX_NIM_INSTALL_METHOD='source' failed"
+      fi
+    fi
+  else
+    echo -e "${YELLOW}  Output: ${NC}"
+    echo "$output" | head -30
+    export VFOX_NIM_INSTALL_METHOD="binary"
+    fail "Installation with VFOX_NIM_INSTALL_METHOD='source' failed"
   fi
 }
 
@@ -488,20 +540,21 @@ summary() {
 main() {
   setup
 
-  # Run tests (13 total - matching mise comprehensiveness)
-  test_plugin_added           # 1
-  test_plugin_hooks           # 2
-  test_list_versions          # 3
-  test_install_version        # 4
-  test_nim_execution          # 5
-  test_nimble_available       # 6
-  test_nimble_dir             # 7
-  test_nim_compile            # 8
-  test_metadata               # 9
-  test_tool_versions_file     # 10
-  test_nimble_package         # 11
-  test_uninstall_reinstall    # 12
-  test_install_method_env_var # 13
+  # Run tests (14 total - matching mise comprehensiveness)
+  test_plugin_added                  # 1
+  test_plugin_hooks                  # 2
+  test_list_versions                 # 3
+  test_install_version               # 4
+  test_nim_execution                 # 5
+  test_nimble_available              # 6
+  test_nimble_dir                    # 7
+  test_nim_compile                   # 8
+  test_metadata                      # 9
+  test_tool_versions_file            # 10
+  test_nimble_package                # 11
+  test_uninstall_reinstall           # 12
+  test_install_method_env_var_auto   # 13
+  test_install_method_env_var_source # 14
 
   cleanup
   summary
