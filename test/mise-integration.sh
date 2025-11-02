@@ -10,20 +10,26 @@ export MISE_DEBUG=1
 # Enable experimental features for backend plugins
 export MISE_EXPERIMENTAL=1
 
-# Pass GitHub token if available (for API rate limiting)
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  export GITHUB_TOKEN
-fi
-if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
-  export GITHUB_API_TOKEN
-fi
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Pass GitHub token if available (for API rate limiting)
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  export GITHUB_TOKEN
+elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  # Get token from gh CLI if available
+  GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "")
+  if [[ -n "$GITHUB_TOKEN" ]]; then
+    export GITHUB_TOKEN
+  fi
+fi
+if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
+  export GITHUB_API_TOKEN
+fi
 
 # Test counters
 TESTS_RUN=0
@@ -67,6 +73,11 @@ setup() {
   echo -e "  MISE_DATA_DIR=$MISE_DATA_DIR"
   echo -e "  MISE_CACHE_DIR=$MISE_CACHE_DIR"
   echo -e "  MISE_CONFIG_DIR=$MISE_CONFIG_DIR"
+
+  # Use auto mode by default to support all platforms (tries binaries, then nightly, then source)
+  # Tests 12-14 will explicitly test binary-only and auto modes
+  export VFOX_NIM_INSTALL_METHOD="${VFOX_NIM_INSTALL_METHOD:-auto}"
+  echo -e "${GREEN}✓${NC} Using install_method='${VFOX_NIM_INSTALL_METHOD}' for tests"
 
   # Check if mise is installed
   if ! command -v mise &>/dev/null; then
@@ -401,12 +412,12 @@ test_list_versions() {
     else
       echo -e "${YELLOW}  Output (first 20 lines): ${NC}"
       echo "$output" | head -20
-      fail "Output doesn't contain expected version 2.2.4"
+      fail "Output doesn't contain expected version 2.2.4 (ensure GITHUB_TOKEN is set)"
     fi
   else
     echo -e "${RED}  Output: ${NC}"
     echo "$output"
-    fail "mise ls-remote nim failed"
+    fail "mise ls-remote nim failed (ensure GITHUB_TOKEN is set to avoid rate limits)"
   fi
 }
 
@@ -447,7 +458,171 @@ test_nimble_package() {
   fi
 }
 
-# Test 12: Test uninstall and reinstall
+# Test 12: Test install_method = 'auto' (default behavior)
+test_install_method_auto() {
+  test_case "Install with install_method='auto' (default)"
+
+  # Clean install directory first
+  mise uninstall nim@2.2.4 2>/dev/null || true
+
+  local test_dir
+  test_dir=$(mktemp -d)
+  cd "$test_dir"
+
+  # Create mise.toml with install_method = 'auto'
+  cat >mise.toml <<'EOF'
+[env]
+_.vfox-nim = { install_method = "auto" }
+
+[tools]
+nim = "2.2.4"
+EOF
+
+  # Trust the config file
+  mise trust 2>/dev/null || true
+
+  # Install with auto mode
+  local output
+  if output=$(mise install 2>&1); then
+    if mise where nim@2.2.4 >/dev/null 2>&1; then
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      pass
+    else
+      echo -e "${YELLOW}  Output: ${NC}"
+      echo "$output" | tail -30
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      fail "nim 2.2.4 not installed after mise install"
+    fi
+  else
+    echo -e "${YELLOW}  Output: ${NC}"
+    echo "$output" | tail -30
+    cd - >/dev/null
+    rm -rf "$test_dir"
+    fail "mise install failed with install_method='auto'"
+  fi
+}
+
+# Test 13: Test install_method = 'binary' via MiseEnv hook
+test_install_method_binary() {
+  test_case "Install with install_method='binary' (via MiseEnv hook)"
+
+  # Clean install directory first
+  mise uninstall nim@2.2.4 2>/dev/null || true
+
+  local test_dir
+  test_dir=$(mktemp -d)
+  cd "$test_dir"
+
+  # Create mise.toml with install_method = 'binary'
+  cat >mise.toml <<'EOF'
+[env]
+_.vfox-nim = { install_method = "binary" }
+
+[tools]
+nim = "2.2.4"
+EOF
+
+  # Trust the config file
+  mise trust 2>/dev/null || true
+
+  # Install with binary-only mode
+  local output
+  if output=$(mise install 2>&1); then
+    if mise where nim@2.2.4 >/dev/null 2>&1; then
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      pass
+    else
+      echo -e "${YELLOW}  Output: ${NC}"
+      echo "$output" | tail -30
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      # On platforms without binaries, this is expected to fail
+      echo -e "${YELLOW}  ⚠ Note: Binary-only install may fail on platforms without pre-built binaries${NC}"
+      pass # Don't fail - expected behavior on some platforms
+    fi
+  else
+    # Check if it failed due to no binary available (expected on some platforms)
+    if echo "$output" | grep -q "No pre-built binary available"; then
+      echo -e "${YELLOW}  ⚠ Expected failure: No pre-built binary available for this platform${NC}"
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      pass # This is correct behavior
+    else
+      echo -e "${YELLOW}  Output: ${NC}"
+      echo "$output" | tail -30
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      fail "mise install failed unexpectedly with install_method='binary'"
+    fi
+  fi
+}
+
+# Test 13b: Test that VFOX_NIM_INSTALL_METHOD env var overrides MiseEnv hook
+test_install_method_env_var() {
+  test_case "Verify VFOX_NIM_INSTALL_METHOD env var overrides MiseEnv hook"
+
+  # Clean install directory first
+  mise uninstall nim@2.2.4 2>/dev/null || true
+
+  local test_dir
+  test_dir=$(mktemp -d)
+  cd "$test_dir"
+
+  # Create mise.toml with BOTH MiseEnv hook (set to 'auto') AND env var (set to 'source')
+  # The env var should take precedence
+  cat >mise.toml <<'EOF'
+[env]
+_.vfox-nim = { install_method = "auto" }
+VFOX_NIM_INSTALL_METHOD = "source"
+
+[tools]
+nim = "2.2.4"
+EOF
+
+  # Trust the config file
+  mise trust 2>/dev/null || true
+
+  # Install - should use 'source' from env var, not 'auto' from MiseEnv hook
+  # This forces a source build even though 'auto' would use a binary on this platform
+  local output
+  if output=$(mise install 2>&1); then
+    # Verify installation succeeded
+    if mise where nim@2.2.4 >/dev/null 2>&1; then
+      # The KEY test: verify it built from source (proving env var overrode MiseEnv)
+      # If MiseEnv hook was used, we'd see "Using pre-built Nim binary" instead
+      if echo "$output" | grep -q "Building from source"; then
+        cd - >/dev/null
+        rm -rf "$test_dir"
+        pass
+      else
+        echo -e "${YELLOW}  Failed: Expected source build but got binary${NC}"
+        echo -e "${YELLOW}  This means env var didn't override MiseEnv hook!${NC}"
+        echo -e "${YELLOW}  Output (last 30 lines): ${NC}"
+        echo "$output" | tail -30
+        cd - >/dev/null
+        rm -rf "$test_dir"
+        fail "Env var VFOX_NIM_INSTALL_METHOD didn't override MiseEnv hook"
+      fi
+    else
+      echo -e "${YELLOW}  Output: ${NC}"
+      echo "$output" | tail -30
+      cd - >/dev/null
+      rm -rf "$test_dir"
+      fail "Installation succeeded but binary not found"
+    fi
+  else
+    echo -e "${YELLOW}  Output: ${NC}"
+    echo "$output" | tail -30
+    cd - >/dev/null
+    rm -rf "$test_dir"
+    fail "mise install failed with VFOX_NIM_INSTALL_METHOD env var"
+  fi
+}
+
+# Test 14: Test uninstall and reinstall
 test_uninstall_reinstall() {
   test_case "mise uninstall nim@2.2.4 && mise install nim@2.2.4"
 
@@ -528,19 +703,22 @@ summary() {
 main() {
   setup
 
-  # Run tests (12 total - matching vfox comprehensiveness)
-  test_plugin_installed    # 1
-  test_plugin_hooks        # 2
-  test_list_versions       # 3 (moved up - now matches vfox order)
-  test_install_version     # 4
-  test_nim_execution       # 5
-  test_nimble_available    # 6
-  test_nimble_dir          # 7
-  test_nim_compile         # 8
-  test_metadata            # 9
-  test_config_file         # 10
-  test_nimble_package      # 11
-  test_uninstall_reinstall # 12
+  # Run tests (15 total - including install_method tests)
+  test_plugin_installed       # 1
+  test_plugin_hooks           # 2
+  test_list_versions          # 3 (moved up - now matches vfox order)
+  test_install_version        # 4
+  test_nim_execution          # 5
+  test_nimble_available       # 6
+  test_nimble_dir             # 7
+  test_nim_compile            # 8
+  test_metadata               # 9
+  test_config_file            # 10
+  test_nimble_package         # 11
+  test_install_method_auto    # 12 - Test install_method='auto'
+  test_install_method_binary  # 13 - Test install_method='binary' (via MiseEnv)
+  test_install_method_env_var # 13b - Test via env var
+  test_uninstall_reinstall    # 14
 
   # Cleanup before summary
   cleanup

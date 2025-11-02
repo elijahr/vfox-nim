@@ -2,6 +2,9 @@
 
 local M = {}
 
+-- Add hooks directory to package path so tests can require lib modules
+package.path = package.path .. ";hooks/?.lua;hooks/?/init.lua"
+
 -- Mock PLUGIN global (used by backend and vfox hooks)
 _G.PLUGIN = {}
 

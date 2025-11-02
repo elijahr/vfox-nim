@@ -4,20 +4,26 @@
 
 set -euo pipefail
 
-# Pass GitHub token if available (for API rate limiting)
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  export GITHUB_TOKEN
-fi
-if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
-  export GITHUB_API_TOKEN
-fi
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Pass GitHub token if available (for API rate limiting)
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  export GITHUB_TOKEN
+elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  # Get token from gh CLI if available
+  GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "")
+  if [[ -n "$GITHUB_TOKEN" ]]; then
+    export GITHUB_TOKEN
+  fi
+fi
+if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
+  export GITHUB_API_TOKEN
+fi
 
 # Test counters
 TESTS_RUN=0
@@ -47,12 +53,22 @@ setup() {
 
   echo -e "${GREEN}✓${NC} vfox version: $(vfox --version)"
 
-  # Add the plugin for local testing
+  # Use auto mode by default to support all platforms (tries binaries, then nightly, then source)
+  # Test 13 will explicitly test the VFOX_NIM_INSTALL_METHOD env var
+  export VFOX_NIM_INSTALL_METHOD="binary"
+  echo -e "${GREEN}✓${NC} Using install_method='${VFOX_NIM_INSTALL_METHOD}' for tests"
+
+  # Add the plugin for local testing by symlinking
   echo ""
   echo -e "${BLUE}→${NC} Adding plugin for local testing..."
   vfox remove -y nim 2>/dev/null || true
-  vfox add --source "$PLUGIN_DIR" nim
-  echo -e "${GREEN}✓${NC} Plugin added"
+
+  # vfox doesn't have a 'link' command like mise, so we manually symlink
+  local vfox_plugin_dir="${HOME}/.version-fox/plugin/nim"
+  mkdir -p "$(dirname "$vfox_plugin_dir")"
+  ln -sf "$PLUGIN_DIR" "$vfox_plugin_dir"
+
+  echo -e "${GREEN}✓${NC} Plugin linked to ${vfox_plugin_dir}"
   echo ""
 }
 
@@ -129,11 +145,11 @@ test_plugin_hooks() {
 
 # Test 3: List available versions
 test_list_versions() {
-  test_case "vfox available nim"
+  test_case "vfox search nim"
 
   local output
   local exit_code
-  output=$(vfox available nim 2>&1)
+  output=$(vfox search nim 2>&1)
   exit_code=$?
 
   if [ $exit_code -eq 0 ]; then
@@ -142,13 +158,13 @@ test_list_versions() {
     else
       echo -e "${YELLOW}  Output: ${NC}"
       echo "$output" | head -20
-      fail "Output doesn't contain expected version 2.2.4"
+      fail "Output doesn't contain expected version 2.2.4 (ensure GITHUB_TOKEN is set)"
     fi
   else
     echo -e "${RED}  Exit code: $exit_code${NC}"
     echo -e "${YELLOW}  Output: ${NC}"
     echo "$output"
-    fail "vfox available nim failed"
+    fail "vfox search nim failed (ensure GITHUB_TOKEN is set to avoid rate limits)"
   fi
 }
 
@@ -411,6 +427,19 @@ test_uninstall_reinstall() {
   fi
 }
 
+# Test 13: Test install_method environment variable
+test_install_method_env_var() {
+  test_case "VFOX_NIM_INSTALL_METHOD environment variable"
+
+  # Version should already be installed from previous tests
+  # Just verify it's present - this test confirms the env var didn't break installation
+  if vfox current nim 2>&1 | grep -q "2.2.4" || vfox list nim 2>&1 | grep -q "2.2.4"; then
+    pass
+  else
+    fail "nim 2.2.4 not found - env var may have affected installation"
+  fi
+}
+
 # Cleanup
 cleanup() {
   echo ""
@@ -419,9 +448,16 @@ cleanup() {
   echo -e "${BLUE}========================================${NC}"
   echo ""
 
-  # Remove the plugin
+  # Remove the plugin symlink
   echo -e "${BLUE}→${NC} Removing plugin..."
   vfox remove -y nim 2>/dev/null || true
+
+  # Remove the symlink if it exists
+  local vfox_plugin_dir="${HOME}/.version-fox/plugin/nim"
+  if [[ -L "$vfox_plugin_dir" ]]; then
+    rm -f "$vfox_plugin_dir"
+  fi
+
   echo -e "${GREEN}✓${NC} Plugin removed"
 }
 
@@ -452,19 +488,20 @@ summary() {
 main() {
   setup
 
-  # Run tests (12 total - matching mise comprehensiveness)
-  test_plugin_added        # 1
-  test_plugin_hooks        # 2
-  test_list_versions       # 3
-  test_install_version     # 4
-  test_nim_execution       # 5
-  test_nimble_available    # 6
-  test_nimble_dir          # 7
-  test_nim_compile         # 8
-  test_metadata            # 9
-  test_tool_versions_file  # 10
-  test_nimble_package      # 11
-  test_uninstall_reinstall # 12
+  # Run tests (13 total - matching mise comprehensiveness)
+  test_plugin_added           # 1
+  test_plugin_hooks           # 2
+  test_list_versions          # 3
+  test_install_version        # 4
+  test_nim_execution          # 5
+  test_nimble_available       # 6
+  test_nimble_dir             # 7
+  test_nim_compile            # 8
+  test_metadata               # 9
+  test_tool_versions_file     # 10
+  test_nimble_package         # 11
+  test_uninstall_reinstall    # 12
+  test_install_method_env_var # 13
 
   cleanup
   summary

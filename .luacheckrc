@@ -27,3 +27,8 @@ files["spec/**/*.lua"] = {
     "311", -- Variable never accessed
   },
 }
+
+-- Third-party library - ignore all warnings
+files["hooks/lib/pprint.lua"] = {
+  ignore = { "." }, -- Ignore all warnings in third-party code
+}
