@@ -1,78 +1,84 @@
 -- hooks/pre_install.lua
--- Returns download information for a specific version
+-- Returns download information for a specific Nim version
 -- Documentation: https://mise.jdx.dev/tool-plugin-development.html#preinstall-hook
 
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
-    -- ctx.runtimeVersion contains the full version string if needed
+    local utils = require("lib.nim_utils")
 
-    -- Example 1: Simple binary download
-    -- local url = "https://github.com/<GITHUB_USER>/<GITHUB_REPO>/releases/download/v" .. version .. "/<TOOL>-linux-amd64"
+    -- Get platform information
+    local os_name = utils.normalize_os(RUNTIME.osType)
+    local arch = utils.normalize_arch(RUNTIME.archType)
 
-    -- Example 2: Platform-specific binary
-    -- local platform = get_platform() -- Uncomment the helper function above
-    -- local url = "https://github.com/<GITHUB_USER>/<GITHUB_REPO>/releases/download/v" .. version .. "/<TOOL>-" .. platform
+    -- Determine if this is a stable version or ref
+    local is_stable = utils.is_stable_version(version)
+    local is_ref = utils.is_ref_version(version)
 
-    -- Example 3: Archive (tar.gz, zip) - mise will extract automatically
-    -- local url = "https://github.com/<GITHUB_USER>/<GITHUB_REPO>/releases/download/v" .. version .. "/<TOOL>-" .. version .. "-linux-amd64.tar.gz"
-
-    -- Example 4: Raw file from repository
-    -- local url = "https://raw.githubusercontent.com/<GITHUB_USER>/<GITHUB_REPO>/" .. version .. "/bin/<TOOL>"
-
-    -- Replace with your actual download URL pattern
-    local url = "https://example.com/<TOOL>/releases/download/" .. version .. "/<TOOL>"
-
-    -- Optional: Fetch checksum for verification
-    -- local sha256 = fetch_checksum(version) -- Implement if checksums are available
-
-    return {
-        version = version,
-        url = url,
-        -- sha256 = sha256, -- Optional but recommended for security
-        note = "Downloading <TOOL> " .. version,
-        -- addition = { -- Optional: download additional components
-        --     {
-        --         name = "component",
-        --         url = "https://example.com/component.tar.gz"
-        --     }
-        -- }
-    }
-end
-
--- Helper function for platform detection (uncomment and modify as needed)
---[[
-local function get_platform()
-    -- RUNTIME object is provided by mise/vfox
-    -- RUNTIME.osType: "Windows", "Linux", "Darwin"
-    -- RUNTIME.archType: "amd64", "386", "arm64", etc.
-
-    local os_name = RUNTIME.osType:lower()
-    local arch = RUNTIME.archType
-
-    -- Map to your tool's platform naming convention
-    -- Adjust these mappings based on how your tool names its releases
-    local platform_map = {
-        ["darwin"] = {
-            ["amd64"] = "darwin-amd64",
-            ["arm64"] = "darwin-arm64",
-        },
-        ["linux"] = {
-            ["amd64"] = "linux-amd64",
-            ["arm64"] = "linux-arm64",
-            ["386"] = "linux-386",
-        },
-        ["windows"] = {
-            ["amd64"] = "windows-amd64",
-            ["386"] = "windows-386",
-        }
-    }
-
-    local os_map = platform_map[os_name]
-    if os_map then
-        return os_map[arch] or "linux-amd64"  -- fallback
+    -- Extract ref prefix if present
+    local actual_version = version
+    if is_ref then
+        actual_version = version:gsub("^ref:", "")
     end
 
-    -- Default fallback
-    return "linux-amd64"
+    -- Try URLs in order (4-level fallback strategy)
+    -- Level 1: Official binaries (Linux x86_64/i686, Windows x86_64/i686 only)
+    if is_stable then
+        local official_url = utils.get_official_url(actual_version, os_name, arch)
+        if official_url then
+            -- Verify URL exists before returning it
+            if utils.url_exists(official_url) then
+                return {
+                    version = actual_version,
+                    url = official_url,
+                    note = "Official binary for " .. os_name .. "/" .. arch,
+                }
+            end
+        end
+    end
+
+    -- Level 2: Exact nightly match (for stable versions only, all platforms)
+    -- This is the "magic" that gives macOS/ARM users stable versions
+    if is_stable then
+        local exact_nightly = utils.find_exact_nightly_url(actual_version, os_name, arch)
+        if exact_nightly then
+            return {
+                version = actual_version,
+                url = exact_nightly,
+                note = "Nightly build matching " .. actual_version .. " for " .. os_name .. "/" .. arch,
+            }
+        end
+    end
+
+    -- Level 3: Generic nightly binaries (for ref: versions only)
+    if is_ref then
+        local nightly_url = utils.find_nightly_url(actual_version, os_name, arch)
+        if nightly_url then
+            return {
+                version = actual_version,
+                url = nightly_url,
+                note = "Latest nightly build for " .. actual_version .. " on " .. os_name .. "/" .. arch,
+            }
+        end
+    end
+
+    -- Level 4: Fall back to building from source (stable versions only)
+    if is_stable then
+        local source_url = "https://nim-lang.org/download/nim-" .. actual_version .. ".tar.xz"
+        return {
+            version = actual_version,
+            url = source_url,
+            note = "Building from source (no pre-built binary available for " .. os_name .. "/" .. arch .. ")",
+        }
+    end
+
+    -- If we get here, we couldn't find any download option
+    error(
+        "No download URL available for version "
+            .. version
+            .. " on "
+            .. os_name
+            .. "/"
+            .. arch
+            .. ". This may indicate an unsupported platform or invalid version."
+    )
 end
---]]

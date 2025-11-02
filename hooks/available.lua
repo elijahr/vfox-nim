@@ -1,51 +1,43 @@
 -- hooks/available.lua
--- Returns a list of available versions for the tool
+-- Returns a list of available versions for Nim
 -- Documentation: https://mise.jdx.dev/tool-plugin-development.html#available-hook
 
 function PLUGIN:Available(ctx)
     local http = require("http")
     local json = require("json")
+    local versions = {}
 
-    -- Example 1: GitHub Tags API (most common)
-    -- Replace <GITHUB_USER>/<GITHUB_REPO> with your tool's repository
-    local repo_url = "https://api.github.com/repos/<GITHUB_USER>/<GITHUB_REPO>/tags"
+    -- Helper to get GitHub headers with token if available
+    local function get_github_headers()
+        local token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_API_TOKEN")
+        if token then
+            return { ["Authorization"] = "token " .. token }
+        end
+        return {}
+    end
 
-    -- Example 2: GitHub Releases API (for tools that use GitHub releases)
-    -- local repo_url = "https://api.github.com/repos/<GITHUB_USER>/<GITHUB_REPO>/releases"
-
-    -- mise automatically handles GitHub authentication - no manual token setup needed
+    -- 1. Get stable versions from nim-lang/Nim tags
+    local tags_url = "https://api.github.com/repos/nim-lang/Nim/tags?per_page=100"
     local resp, err = http.get({
-        url = repo_url,
+        url = tags_url,
+        headers = get_github_headers(),
     })
 
-    if err ~= nil then
-        error("Failed to fetch versions: " .. err)
-    end
-    if resp.status_code ~= 200 then
-        error("GitHub API returned status " .. resp.status_code .. ": " .. resp.body)
-    end
-
-    local tags = json.decode(resp.body)
-    local result = {}
-
-    -- Process tags/releases
-    for _, tag_info in ipairs(tags) do
-        local version = tag_info.name
-
-        -- Clean up version string (remove 'v' prefix if present)
-        -- version = version:gsub("^v", "")
-
-        -- For releases API, you might want:
-        -- local version = tag_info.tag_name:gsub("^v", "")
-        -- local is_prerelease = tag_info.prerelease or false
-        -- local note = is_prerelease and "pre-release" or nil
-
-        table.insert(result, {
-            version = version,
-            note = nil, -- Optional: "latest", "lts", "pre-release", etc.
-            -- addition = {} -- Optional: additional tools/components
-        })
+    if err == nil and resp.status_code == 200 then
+        local tags = json.decode(resp.body)
+        for _, tag in ipairs(tags) do
+            local version = tag.name:gsub("^v", "") -- Remove 'v' prefix
+            -- Only include versions that match X.Y.Z pattern
+            if version:match("^%d+%.%d+%.%d+$") then
+                table.insert(versions, { version = version })
+            end
+        end
     end
 
-    return result
+    -- Note: We don't list nightly "ref:" versions here because:
+    -- 1. mise filters out non-standard version formats from ls-remote
+    -- 2. Users can still use them directly: `mise install nim@ref:devel`
+    -- 3. The pre_install hook will handle ref: versions correctly
+
+    return versions
 end

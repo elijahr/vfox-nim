@@ -1,0 +1,10 @@
+return {
+  _all = {
+    -- Make lib/ directory available for require()
+    ROOT = {'.'},
+    lpath = './?.lua;./?/init.lua',
+  },
+  default = {
+    verbose = true,
+  },
+}

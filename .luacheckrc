@@ -1,42 +1,29 @@
--- .luacheckrc configuration for mise tool plugins
-
-std = "lua51"
-
--- Globals defined by the mise/vfox plugin system
+std = "lua54"
 globals = {
-    "PLUGIN",
+  -- Injected by mise
+  "RUNTIME",
+  "ctx",
+  "PLUGIN",
+  -- Mise Lua modules
+  "http",
+  "json",
+  "file",
+  "cmd",
+  "env",
+  "strings",
+  "archiver",
 }
-
--- Read-only globals from the plugin environment
-read_globals = {
-    -- vfox modules
-    "require",
-    "http",
-    "json",
-
-    -- Standard Lua globals
-    "os",
-    "io",
-    "table",
-    "string",
-    "math",
-    "error",
-    "ipairs",
-    "pairs",
-    "print",
-    "tostring",
-    "tonumber",
-    "type",
-}
-
 ignore = {
-    "631", -- line is too long
-    "212", -- unused argument (self and ctx are often unused in simple hooks)
+  "212", -- Unused argument
+  "542", -- Empty if branch
+  "631", -- Line too long
 }
 
--- Allow trailing whitespace (can be auto-fixed)
-allow_defined_top = true
-
--- Don't warn about unused self and ctx in hook functions
--- These are part of the plugin API signature
-unused_args = false
+-- Allow test files to mock global functions
+files["spec/**/*.lua"] = {
+  ignore = {
+    "122", -- Setting read-only field (test mocking)
+    "211", -- Unused variable
+    "311", -- Variable never accessed
+  },
+}

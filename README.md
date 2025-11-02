@@ -5,12 +5,14 @@ This is a GitHub template for building a mise tool plugin using the vfox-style L
 ## Using this template
 
 ### Option 1: Use GitHub's template feature (recommended)
+
 1. Click "Use this template" button on GitHub
 2. Name your repository (e.g., `mise-mytool`)
 3. Clone your new repository
 4. Follow the setup instructions below
 
 ### Option 2: Clone and modify
+
 ```bash
 git clone https://github.com/jdx/mise-tool-plugin-template mise-mytool
 cd mise-mytool
@@ -23,11 +25,13 @@ git init
 ### 1. Replace placeholders
 
 Search and replace these placeholders throughout the project:
-- `<TOOL>` → your tool name (e.g., `semver`)
-- `<GITHUB_USER>` → your GitHub username or organization
-- `<GITHUB_REPO>` → the upstream tool's GitHub repository name
+
+- `nim` → your tool name (e.g., `semver`)
+- `elijahr` → your GitHub username or organization
+- `vfox-nim` → the upstream tool's GitHub repository name
 
 Files to update:
+
 - `metadata.lua` - Update name, description, author, updateUrl
 - `hooks/*.lua` - Replace placeholders in all hook files
 - `mise-tasks/test` - Update test version and command
@@ -36,6 +40,7 @@ Files to update:
 ### 2. Implement the hooks
 
 #### `hooks/available.lua`
+
 Returns a list of available versions. Examples:
 
 ```lua
@@ -50,6 +55,7 @@ local repo_url = "https://api.github.com/repos/owner/repo/tags"
 ```
 
 #### `hooks/pre_install.lua`
+
 Returns download information for a specific version:
 
 ```lua
@@ -64,6 +70,7 @@ local url = "https://raw.githubusercontent.com/owner/repo/" .. version .. "/bin/
 ```
 
 #### `hooks/post_install.lua`
+
 Handles post-installation setup:
 
 ```lua
@@ -114,30 +121,48 @@ return {
 ### Setting up development environment
 
 1. Install pre-commit hooks (optional but recommended):
+
 ```bash
-hk install
+pre-commit install
 ```
 
-This sets up automatic linting and formatting on git commits.
+This sets up automatic linting and formatting on git commits. The pre-commit configuration includes:
+
+- **General**: trailing whitespace, EOF fixing, YAML validation
+- **Lua**: stylua formatting, luacheck linting
+- **Shell**: shellcheck, shfmt
+- **YAML**: yamllint
+- **GitHub Actions**: actionlint
+- **Markdown**: prettier
+
+Run manually on all files:
+
+```bash
+pre-commit run --all-files
+```
 
 ### Local Testing
 
 1. Link your plugin for development:
+
 ```bash
-mise plugin link --force <TOOL> .
+mise plugin link --force nim .
 ```
 
 2. Run tests:
+
 ```bash
 mise run test
 ```
 
 3. Run linting:
+
 ```bash
 mise run lint
 ```
 
 4. Run full CI suite:
+
 ```bash
 mise run ci
 ```
@@ -152,6 +177,7 @@ This template uses [hk](https://hk.jdx.dev) for modern linting and pre-commit ho
 - **Pre-commit hooks**: Runs all checks automatically on git commit
 
 Manual commands:
+
 ```bash
 hk check      # Run all linters (same as mise run lint)
 hk fix        # Run linters and auto-fix issues
@@ -160,8 +186,9 @@ hk fix        # Run linters and auto-fix issues
 ### Debugging
 
 Enable debug output:
+
 ```bash
-MISE_DEBUG=1 mise install <TOOL>@latest
+MISE_DEBUG=1 mise install nim@latest
 ```
 
 ## Files
@@ -181,6 +208,7 @@ MISE_DEBUG=1 mise install <TOOL>@latest
 ## Common Patterns
 
 ### Platform Detection
+
 ```lua
 local function get_platform()
     -- RUNTIME object is provided by mise/vfox
@@ -215,6 +243,7 @@ end
 ```
 
 ### Checksum Verification
+
 ```lua
 -- In pre_install.lua, return sha256
 return {
@@ -225,6 +254,7 @@ return {
 ```
 
 ### Error Handling
+
 ```lua
 if err ~= nil then
     error("Failed to fetch versions: " .. err)
