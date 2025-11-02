@@ -432,7 +432,7 @@ test_nimble_package() {
   # Try to install a small, well-known package
   local output
   # Use --accept to auto-accept prompts, and -y for yes to all
-  if output=$(echo "y" | mise exec nim@2.2.4 -- nimble install -y argparse 2>&1 || true); then
+  if output=$(echo "y" | mise exec nim@2.2.4 -- nimble install -y argparse 2>&1); then
     # Check if installation succeeded or if package already exists
     if echo "$output" | grep -qi "success\|installed\|already"; then
       cd - >/dev/null
@@ -443,18 +443,14 @@ test_nimble_package() {
       echo "$output" | head -30
       cd - >/dev/null
       rm -rf "$test_dir"
-      # Don't fail hard on nimble package install - it depends on network
-      echo -e "${YELLOW}  ⚠ SKIP: nimble package install may require network access${NC}"
-      TESTS_PASSED=$((TESTS_PASSED + 1))
-      echo ""
+      fail "nimble install succeeded but didn't show expected success message"
     fi
   else
+    echo -e "${YELLOW}  Output (first 30 lines): ${NC}"
+    echo "$output" | head -30
     cd - >/dev/null
     rm -rf "$test_dir"
-    # Don't fail hard on nimble package install - it depends on network
-    echo -e "${YELLOW}  ⚠ SKIP: nimble package install may require network access${NC}"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-    echo ""
+    fail "nimble install failed"
   fi
 }
 

@@ -1,6 +1,6 @@
 # vfox-nim
 
-Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.lhan.me/).
+Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/).
 
 ## Features
 

@@ -113,7 +113,6 @@ jobs:
       - name: Run mise integration tests
         shell: bash
         run: |
-          chmod +x test/mise-integration.sh
           bash test/mise-integration.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -132,14 +131,21 @@ jobs:
       - name: Checkout plugin
         uses: actions/checkout@v5
 
-      - name: Install vfox
+      - name: Install vfox (Windows)
+        uses: MinoruSekine/setup-scoop@v4.0.2
+        if: runner.os == 'Windows'
+        with:
+          apps: vfox
+
+      - name: Install vfox (Linux and macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
             sudo apt-get update
             sudo apt-get install -y vfox
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          else
             brew tap version-fox/tap
             brew install vfox
           fi
@@ -147,7 +153,6 @@ jobs:
       - name: Run vfox integration tests
         shell: bash
         run: |
-          chmod +x test/vfox-integration.sh
           bash test/vfox-integration.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -44,7 +44,7 @@ setup() {
   # Check if vfox is installed
   if ! command -v vfox &>/dev/null; then
     echo -e "${RED}❌ vfox is not installed${NC}"
-    echo "Install vfox from: https://vfox.lhan.me/"
+    echo "Install vfox from: https://vfox.dev/"
     echo ""
     echo "macOS: brew tap version-fox/tap && brew install vfox"
     echo "Linux: curl -sSL https://raw.githubusercontent.com/version-fox/vfox/main/install.sh | bash"
@@ -374,7 +374,7 @@ test_nimble_package() {
   # Try to install a small, well-known package
   local output
   # Use --accept to auto-accept prompts, and -y for yes to all
-  if output=$(echo "y" | nimble install -y argparse 2>&1 || true); then
+  if output=$(echo "y" | nimble install -y argparse 2>&1); then
     # Check if installation succeeded or if package already exists
     if echo "$output" | grep -qi "success\|installed\|already"; then
       cd - >/dev/null
@@ -385,18 +385,14 @@ test_nimble_package() {
       echo "$output" | head -30
       cd - >/dev/null
       rm -rf "$test_dir"
-      # Don't fail hard on nimble package install - it depends on network
-      echo -e "${YELLOW}  ⚠ SKIP: nimble package install may require network access${NC}"
-      TESTS_PASSED=$((TESTS_PASSED + 1))
-      echo ""
+      fail "nimble install succeeded but didn't show expected success message"
     fi
   else
+    echo -e "${YELLOW}  Output (first 30 lines): ${NC}"
+    echo "$output" | head -30
     cd - >/dev/null
     rm -rf "$test_dir"
-    # Don't fail hard on nimble package install - it depends on network
-    echo -e "${YELLOW}  ⚠ SKIP: nimble package install may require network access${NC}"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-    echo ""
+    fail "nimble install failed"
   fi
 }
 

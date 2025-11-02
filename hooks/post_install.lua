@@ -155,6 +155,8 @@ build_from_source = function(install_path, is_windows, nim_ext) -- luacheck: no 
 
     -- Workaround for ci/funs.sh: line 52: config/build_config.txt: No such file or directory
     if not file_exists(install_path .. "/config/build_config.txt") then
+        -- make dirs
+        exec_or_error('mkdir -p "' .. install_path .. '/config"', "Failed to create config directory")
         -- write multiline string to file
         local f = io.open(install_path .. "/config/build_config.txt", "w")
         f:write([[nim_comment="key-value pairs for windows/posix bootstrapping build scripts"
