@@ -84,20 +84,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: "5.1"
+
+      - name: Install LuaRocks
+        uses: leafo/gh-actions-luarocks@v6
+
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
 
-      - name: Install lua tools (Windows)
-        if: runner.os == 'Windows'
+      - name: Install lua tools
         run: |
-          luarocks.exe --lua-version 5.1 install busted
-          luarocks.exe --lua-version 5.1 install luacheck
-
-      - name: Install lua tools (Linux and macOS)
-        if: runner.os != 'Windows'
-        run: |
-          luarocks --lua-version 5.1 install busted
-          luarocks --lua-version 5.1 install luacheck
+          luarocks install busted
+          luarocks install luacheck
 
       - name: Run Lua unit tests
         run: |
@@ -120,25 +121,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: "5.1"
+
+      - name: Install LuaRocks
+        uses: leafo/gh-actions-luarocks@v6
+
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
 
-      - name: Install Luarocks dependencies (Windows)
-        if: runner.os == 'Windows'
+      - name: Install Luarocks dependencies
         run: |
-          mise.exe exec -- luarocks.exe --lua-version 5.1 install busted
-          mise.exe exec -- luarocks.exe --lua-version 5.1 install luacheck
-
-      - name: Install Luarocks dependencies (Linux and macOS)
-        if: runner.os != 'Windows'
-        run: |
-          mise exec -- luarocks --lua-version 5.1 install busted
-          mise exec -- luarocks --lua-version 5.1 install luacheck
+          luarocks install busted
+          luarocks install luacheck
 
       - name: Run mise integration tests
         shell: bash
         run: |
-          mise exec -- lua5.1 "$(which busted)" test/mise-integration_spec.lua -v
+          mise exec -- "$(which busted)" test/mise-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_YES: 1
@@ -159,6 +161,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: "5.1"
+
+      - name: Install LuaRocks
+        uses: leafo/gh-actions-luarocks@v6
+
       - name: Install vfox and .tool-versions (Windows)
         uses: MinoruSekine/setup-scoop@v4.0.2
         if: runner.os == 'Windows'
@@ -178,17 +188,10 @@ jobs:
             brew install vfox
           fi
 
-      - name: Install Luarocks and busted (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          vfox.exe install --all --yes
-          luarocks.exe --lua-version 5.1 install busted
-
-      - name: Install Luarocks and busted (Linux and macOS)
-        if: runner.os != 'Windows'
+      - name: Install vfox tools and busted
         run: |
           vfox install --all --yes
-          luarocks --lua-version 5.1 install busted
+          luarocks install busted
 
       - name: Run vfox integration tests
         shell: bash
