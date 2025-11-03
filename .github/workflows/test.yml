@@ -90,8 +90,11 @@ jobs:
         run: |
           curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
           chmod +x lua51
+          file lua51
+          ldd lua51 || true
           sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
+          ls -la /usr/local/bin/lua5.1
+          /usr/local/bin/lua5.1 -v
 
       - name: Install Lua 5.1 binary (macOS)
         if: runner.os == 'macOS'
@@ -156,8 +159,11 @@ jobs:
         run: |
           curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
           chmod +x lua51
+          file lua51
+          ldd lua51 || true
           sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
+          ls -la /usr/local/bin/lua5.1
+          /usr/local/bin/lua5.1 -v
 
       - name: Install Lua 5.1 binary (macOS)
         if: runner.os == 'macOS'
@@ -225,8 +231,11 @@ jobs:
         run: |
           curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
           chmod +x lua51
+          file lua51
+          ldd lua51 || true
           sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
+          ls -la /usr/local/bin/lua5.1
+          /usr/local/bin/lua5.1 -v
 
       - name: Install Lua 5.1 binary (macOS)
         if: runner.os == 'macOS'
