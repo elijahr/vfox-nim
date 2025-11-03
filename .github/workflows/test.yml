@@ -84,47 +84,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Lua 5.1 binary (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
-          chmod +x lua51
-          file lua51
-          ldd lua51 || true
-          ./lua51 -v || echo "Direct execution failed with exit code $?"
-          sudo mv lua51 /usr/local/bin/lua5.1
-          ls -la /usr/local/bin/lua5.1
-          which lua5.1
-          /usr/local/bin/lua5.1 -v || echo "Failed with exit code $?"
-
-      - name: Install Lua 5.1 binary (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-arm64
-          else
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-x64
-          fi
-          chmod +x lua51
-          sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
-
-      - name: Install Lua 5.1 binary (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          curl -L -o lua51.exe https://github.com/elijahr/luabinaries/releases/latest/download/lua51.exe
-          mkdir -p "$HOME/bin"
-          mv lua51.exe "$HOME/bin/lua5.1.exe"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          "$HOME/bin/lua5.1.exe" -v
+      - name: Install Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: "5.1"
 
       - name: Install LuaRocks
         uses: leafo/gh-actions-luarocks@v6
-        with:
-          withLuaPath: /usr/local/bin
 
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
@@ -155,47 +121,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Lua 5.1 binary (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
-          chmod +x lua51
-          file lua51
-          ldd lua51 || true
-          ./lua51 -v || echo "Direct execution failed with exit code $?"
-          sudo mv lua51 /usr/local/bin/lua5.1
-          ls -la /usr/local/bin/lua5.1
-          which lua5.1
-          /usr/local/bin/lua5.1 -v || echo "Failed with exit code $?"
-
-      - name: Install Lua 5.1 binary (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-arm64
-          else
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-x64
-          fi
-          chmod +x lua51
-          sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
-
-      - name: Install Lua 5.1 binary (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          curl -L -o lua51.exe https://github.com/elijahr/luabinaries/releases/latest/download/lua51.exe
-          mkdir -p "$HOME/bin"
-          mv lua51.exe "$HOME/bin/lua5.1.exe"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          "$HOME/bin/lua5.1.exe" -v
+      - name: Install Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: "5.1"
 
       - name: Install LuaRocks
         uses: leafo/gh-actions-luarocks@v6
-        with:
-          withLuaPath: /usr/local/bin
 
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
@@ -229,47 +161,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Lua 5.1 binary (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
-          chmod +x lua51
-          file lua51
-          ldd lua51 || true
-          ./lua51 -v || echo "Direct execution failed with exit code $?"
-          sudo mv lua51 /usr/local/bin/lua5.1
-          ls -la /usr/local/bin/lua5.1
-          which lua5.1
-          /usr/local/bin/lua5.1 -v || echo "Failed with exit code $?"
-
-      - name: Install Lua 5.1 binary (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-arm64
-          else
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-x64
-          fi
-          chmod +x lua51
-          sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
-
-      - name: Install Lua 5.1 binary (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          curl -L -o lua51.exe https://github.com/elijahr/luabinaries/releases/latest/download/lua51.exe
-          mkdir -p "$HOME/bin"
-          mv lua51.exe "$HOME/bin/lua5.1.exe"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          "$HOME/bin/lua5.1.exe" -v
+      - name: Install Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: "5.1"
 
       - name: Install LuaRocks
         uses: leafo/gh-actions-luarocks@v6
-        with:
-          withLuaPath: /usr/local/bin
 
       - name: Install vfox and .tool-versions (Windows)
         uses: MinoruSekine/setup-scoop@v4.0.2
