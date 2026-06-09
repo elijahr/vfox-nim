@@ -94,6 +94,15 @@ local function setup_github_token()
 end
 
 describe("vfox Plugin Integration Tests", function()
+    -- Durable, collision-free archive path shared by setup (create) and teardown (remove).
+    -- mise-integration_spec.lua uses the same os.tmpname() pattern for its sandbox dir.
+    -- NOTE: on a Windows runtime os.tmpname() may return a backslash path; the create site
+    -- interpolates it into a single-quoted `git archive --output='...'` shell command under
+    -- `shell: 'msys2 {0}'`, where a backslashed path is fragile and may need backslash->forward-slash
+    -- normalization before interpolation. The integration tier is [CI-ONLY] on Windows (design
+    -- §3.3); this caveat is validated by the first Windows integration CI run, not locally.
+    local zip_path = os.tmpname() .. "-vfox-nim-test.zip"
+
     -- Setup runs once before all tests
     setup(function()
         setup_github_token()
@@ -116,8 +125,7 @@ describe("vfox Plugin Integration Tests", function()
         print("\n→ Adding plugin for local testing...")
         os.execute("vfox remove -y nim 2>/dev/null || true")
 
-        -- Create a zip archive of the current repository
-        local zip_path = "/tmp/vfox-nim-test.zip"
+        -- Create a zip archive of the current repository (zip_path is the describe-scoped local)
         local archive_result =
             os.execute("cd '" .. PLUGIN_DIR .. "' && git archive --format=zip --output='" .. zip_path .. "' HEAD")
         assert(archive_result == true or archive_result == 0, "Failed to create git archive")
@@ -138,8 +146,8 @@ describe("vfox Plugin Integration Tests", function()
         print("→ Removing plugin...")
         os.execute("vfox remove -y nim 2>/dev/null || true")
 
-        -- Remove the zip file if it exists
-        os.execute("rm -f /tmp/vfox-nim-test.zip")
+        -- Remove the zip file if it exists (portable; removes exactly the file setup created)
+        os.remove(zip_path)
 
         print("✓ Plugin removed")
     end)

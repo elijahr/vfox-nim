@@ -89,19 +89,37 @@ function M.is_ref_version(version)
     return version:match("^ref:") ~= nil
 end
 
--- Platform detection
+-- Platform detection.
+-- Authoritative inside a hook: vfox/mise injects RUNTIME.osType. Fall back to the
+-- OS env var (Windows_NT on all Windows), then uname, for standalone/test contexts.
 function M.is_windows()
-    local handle = io.popen("uname 2>/dev/null || echo Windows")
-    local result = handle:read("*a")
+    if RUNTIME and RUNTIME.osType then
+        return RUNTIME.osType:lower():match("windows") ~= nil
+    end
+    if os.getenv("OS") == "Windows_NT" then
+        return true
+    end
+    local handle = io.popen("uname 2>/dev/null")
+    if not handle then
+        return false
+    end
+    local result = (handle:read("*a") or ""):lower()
     handle:close()
-    return result:lower():match("windows") ~= nil or result:lower():match("mingw") ~= nil
+    return result:match("mingw") ~= nil or result:match("msys") ~= nil or result:match("windows") ~= nil
 end
 
 function M.is_macos()
+    if RUNTIME and RUNTIME.osType then
+        local t = RUNTIME.osType:lower()
+        return t:match("darwin") ~= nil or t:match("macos") ~= nil
+    end
     local handle = io.popen("uname 2>/dev/null")
-    local result = handle:read("*a")
+    if not handle then
+        return false
+    end
+    local result = (handle:read("*a") or ""):lower()
     handle:close()
-    return result:lower():match("darwin") ~= nil
+    return result:match("darwin") ~= nil
 end
 
 -- Get official binary URL (from asdf-nim:394-406)
@@ -133,24 +151,41 @@ function M.url_exists(url)
     return resp.status_code == 200 or resp.status_code == 302
 end
 
--- Adjust date by offset days
+-- Days since 1970-01-01 for a proleptic-Gregorian civil date (Howard Hinnant's algorithm).
+-- Pure integer arithmetic; valid for any Lua 5.1+/LuaJIT/gopher-lua. m in 1..12.
+local function days_from_civil(y, m, d)
+    y = (m <= 2) and (y - 1) or y
+    local era = math.floor((y >= 0 and y or (y - 399)) / 400)
+    local yoe = y - era * 400 -- [0, 399]
+    local doy = math.floor((153 * ((m > 2) and (m - 3) or (m + 9)) + 2) / 5) + d - 1 -- [0, 365]
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy -- [0, 146096]
+    return era * 146097 + doe - 719468
+end
+
+-- Inverse: civil date (y, m, d) from a day count since 1970-01-01.
+local function civil_from_days(z)
+    z = z + 719468
+    local era = math.floor((z >= 0 and z or (z - 146096)) / 146097)
+    local doe = z - era * 146097 -- [0, 146096]
+    local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365) -- [0, 399]
+    local y = yoe + era * 400
+    local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100)) -- [0, 365]
+    local mp = math.floor((5 * doy + 2) / 153) -- [0, 11]
+    local d = doy - math.floor((153 * mp + 2) / 5) + 1 -- [1, 31]
+    local m = mp < 10 and (mp + 3) or (mp - 9) -- [1, 12]
+    return (m <= 2) and (y + 1) or y, m, d
+end
+
+-- Adjust "YYYY-MM-DD" by `offset` days, returns "YYYY-MM-DD".
+-- Pure integer arithmetic: timezone-, DST-, and OS-independent. No os.time/os.date/shell-out.
 function M.adjust_date(date_str, offset)
-    -- date_str format: "YYYY-MM-DD"
-    local cmd
-    if M.is_macos() then
-        -- macOS date syntax
-        local offset_arg = offset >= 0 and ("+" .. offset .. "d") or (offset .. "d")
-        cmd = string.format('date -j -v%s -f "%%Y-%%m-%%d" "%s" "+%%Y-%%m-%%d" 2>/dev/null', offset_arg, date_str)
-    else
-        -- Linux date syntax
-        cmd = string.format('date -d "%s %d days" "+%%Y-%%m-%%d" 2>/dev/null', date_str, offset)
+    local y, m, d = date_str:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
+    if not y then
+        return ""
     end
-
-    local handle = io.popen(cmd)
-    local result = handle:read("*a"):gsub("%s+$", "")
-    handle:close()
-
-    return result
+    local days = days_from_civil(tonumber(y), tonumber(m), tonumber(d)) + offset
+    local ny, nm, nd = civil_from_days(days)
+    return string.format("%04d-%02d-%02d", ny, nm, nd)
 end
 
 -- Cache helpers
