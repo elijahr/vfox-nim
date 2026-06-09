@@ -6,7 +6,9 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-06-09
+## [0.1.0]
+
+_Not yet released — the `v0.1.0` tag is created by CI on merge to the default branch._
 
 ### Added
 
@@ -38,4 +40,4 @@ All notable changes to vfox-nim are documented here. Format follows
   follow-up before the Windows leg is re-enabled as blocking.
 
 [Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/elijahr/vfox-nim/releases/tag/v0.1.0
+[0.1.0]: https://github.com/elijahr/vfox-nim/commits/main

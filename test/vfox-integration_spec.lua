@@ -322,16 +322,21 @@ describe("vfox Plugin Integration Tests", function()
 
     describe("Environment Variables", function()
         it("should set NIMBLE_DIR to the activated per-project nimble directory", function()
-            local nimble_dir, success = exec_with_nim('echo "NIMBLE_DIR=$NIMBLE_DIR"')
+            local nimble_dir, success, proj = exec_with_nim('echo "NIMBLE_DIR=$NIMBLE_DIR"')
             assert.is_true(success, "activation failed: " .. nimble_dir)
             nimble_dir = nimble_dir:gsub("%s+$", ""):match("NIMBLE_DIR=([^\n]*)")
             assert.is_truthy(nimble_dir and nimble_dir ~= "", "NIMBLE_DIR was not set by activation")
 
-            -- env_keys.lua sets NIMBLE_DIR = <sdk>/nimble. With the developer's ambient
-            -- NIMBLE_DIR scrubbed, vfox activation must produce the per-project sdk path
-            -- (.vfox/sdks/nim/nimble), isolating packages to the activated install. The
-            -- exact suffix is asserted so a regression to the developer's global
-            -- NIMBLE_DIR (e.g. .../mise/installs/nim/2.2.10/nimble) is caught.
+            -- env_keys.lua sets NIMBLE_DIR = <sdk>/nimble. `vfox activate` materializes a
+            -- project-local .vfox/sdks/nim symlink rooted at the activated project dir
+            -- (`proj`), so NIMBLE_DIR must live inside that per-project tmp dir. Pinning to
+            -- `proj` (mirroring the mise spec's MISE_TEST_DIR pin) ensures a stale real
+            -- ~/.vfox path or the developer's global NIMBLE_DIR cannot satisfy the suffix
+            -- check below.
+            assert.is_truthy(
+                nimble_dir:find(proj, 1, true),
+                "NIMBLE_DIR must be inside the activated project dir (" .. proj .. "): got " .. nimble_dir
+            )
             assert.is_truthy(
                 nimble_dir:find("/.vfox/sdks/nim/nimble", 1, true),
                 "NIMBLE_DIR is not the activated vfox sdk nimble dir: " .. nimble_dir
@@ -380,7 +385,8 @@ describe("vfox Plugin Integration Tests", function()
 
     describe("Uninstall and Reinstall", function()
         it("should uninstall and reinstall nim@2.2.4", function()
-            local _ = exec("echo 'y' | vfox uninstall nim@2.2.4 2>&1")
+            local _, ok = exec("echo 'y' | vfox uninstall nim@2.2.4 2>&1")
+            assert.is_true(ok, "uninstall command failed")
             local current_output = exec("vfox current nim 2>&1")
             assert.is_false(current_output:match("2%.2%.4") ~= nil, "Version still shows as installed after uninstall")
 
