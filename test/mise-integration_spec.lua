@@ -16,35 +16,86 @@ local function setenv(name, value)
     env_vars[name] = value
 end
 
+-- Ambient variables that leak the developer's GLOBALLY-active mise/nim into the
+-- sandbox and break hermeticity. mise's shell activation exports these into every
+-- interactive shell (and thus into the busted process), so a child `mise exec`
+-- would otherwise resolve the developer's global nim (e.g. 2.2.10) and its
+-- NIMBLE_DIR instead of the sandbox-installed nim@2.2.4. We scrub them for every
+-- command so the only mise state in scope is the sandbox configured via env_vars.
+local SCRUBBED_ENV_VARS = {
+    "NIMBLE_DIR",
+    "MISE_SHELL",
+    "MISE_DATA_DIR",
+    "MISE_CACHE_DIR",
+    "MISE_CONFIG_DIR",
+    "MISE_DEBUG",
+    "MISE_EXPERIMENTAL",
+    "MISE_VERBOSE",
+    "MISE_TRUSTED_CONFIG_PATHS",
+    "__MISE_ORIG_PATH",
+    "__MISE_DIFF",
+    "__MISE_SESSION",
+    "__MISE_WATCH",
+    "__MISE_ZSH_PRECMD_RUN",
+    "__MISE_ZSH_CHPWD_RAN",
+}
+
+-- A clean PATH that excludes the developer's globally-active mise tool installs
+-- (notably ~/.local/share/mise/installs/nim/<global>/bin). Homebrew is included so
+-- the `mise` and `gh` binaries remain resolvable. The sandbox nim is reached only
+-- via `mise exec`, never via this PATH.
+local SANITIZED_PATH = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 local function build_env_prefix()
+    -- Emit shell statements (not an `env` wrapper) so the prefix composes with
+    -- compound commands containing shell builtins like `cd ... && mise ...`.
+    -- Order: unset the leaking ambient vars, pin a sanitized PATH, then export the
+    -- sandbox vars. Everything runs through `/bin/sh -c` (io.popen / os.execute).
     local parts = {}
+
+    local unset_names = {}
+    for _, name in ipairs(SCRUBBED_ENV_VARS) do
+        -- Only scrub vars NOT explicitly set by the harness for the sandbox.
+        if env_vars[name] == nil then
+            table.insert(unset_names, name)
+        end
+    end
+    if #unset_names > 0 then
+        table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
+    end
+
+    table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+
     for name, value in pairs(env_vars) do
-        table.insert(parts, string.format("%s='%s'", name, value))
+        table.insert(parts, string.format("export %s='%s';", name, value))
     end
-    if #parts > 0 then
-        return table.concat(parts, " ") .. " "
-    end
-    return ""
+
+    return table.concat(parts, " ") .. " "
 end
+
+-- Sentinel used to recover the wrapped command's exit status from stdout.
+-- LuaJIT's io.popen():close() returns only `true` regardless of the child exit
+-- code (unlike PUC Lua 5.2+, which returns true/nil, "exit", code). Relying on
+-- close() therefore reports EVERY command as a success, silently defeating the
+-- success/failure assertions (e.g. the Error Handling test that expects a failed
+-- install). We instead append `printf MARKER$?` after the command so the real
+-- exit status is carried back in the captured output and parsed deterministically.
+local EXIT_MARKER = "__VFOX_NIM_EXIT__"
 
 -- Helper functions
 local function exec(cmd)
-    local full_cmd = build_env_prefix() .. cmd
+    -- Wrap the (possibly compound) command in a group so $? reflects its exit
+    -- status before the trailing 2>&1 redirect is applied.
+    local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
     local handle = io.popen(full_cmd .. " 2>&1")
     local result = handle:read("*a")
-    local exit_code = { handle:close() }
-    -- In Lua 5.1, close() returns true/false
-    -- In Lua 5.2+, close() returns true/nil, exit_type, exit_code
-    local success
-    if type(exit_code[1]) == "boolean" then
-        success = exit_code[1]
-    elseif type(exit_code[1]) == "number" then
-        success = exit_code[1] == 0
-    elseif exit_code[3] then
-        success = exit_code[3] == 0
-    else
-        success = true
-    end
+    handle:close()
+
+    -- Recover the exit status from the sentinel, then strip it from the output.
+    local code = result:match(EXIT_MARKER .. "(%d+)%s*$")
+    result = result:gsub(EXIT_MARKER .. "%d*%s*$", "")
+    local success = code == "0"
+
     -- Filter out DEBUG lines from mise output
     result = result:gsub("DEBUG[^\n]*\n", "")
     return result, success
@@ -224,7 +275,13 @@ describe("Mise Plugin Integration Tests", function()
             local nim_path = exec("mise exec nim@2.2.4 -- which nim 2>&1"):gsub("%s+$", "")
             -- Extract just the path (remove any shell output like "export -p")
             nim_path = nim_path:match("[^\n]*$")
-            assert.matches(MISE_TEST_DIR, nim_path, "nim not from mise directory: " .. nim_path)
+            -- Assert the resolved nim lives INSIDE the sandbox dir. Use a literal
+            -- (plain) find because MISE_TEST_DIR contains '.' and '-' which are Lua
+            -- pattern metacharacters; assert.matches would misinterpret them.
+            assert.is_truthy(
+                nim_path:find(MISE_TEST_DIR, 1, true),
+                "nim not from sandbox mise directory (" .. MISE_TEST_DIR .. "): " .. nim_path
+            )
         end)
 
         it("should have nimble available", function()
@@ -235,7 +292,11 @@ describe("Mise Plugin Integration Tests", function()
             local nimble_path = exec("mise exec nim@2.2.4 -- which nimble 2>&1"):gsub("%s+$", "")
             -- Extract just the path (remove any shell output like "export -p")
             nimble_path = nimble_path:match("[^\n]*$")
-            assert.matches(MISE_TEST_DIR, nimble_path, "nimble not from mise directory: " .. nimble_path)
+            -- Literal (plain) find: MISE_TEST_DIR has Lua-pattern metacharacters.
+            assert.is_truthy(
+                nimble_path:find(MISE_TEST_DIR, 1, true),
+                "nimble not from sandbox mise directory (" .. MISE_TEST_DIR .. "): " .. nimble_path
+            )
         end)
 
         it("should compile and run a simple Nim program", function()
@@ -256,14 +317,25 @@ describe("Mise Plugin Integration Tests", function()
     end)
 
     describe("Environment Variables", function()
-        it("should set NIMBLE_DIR correctly", function()
+        it("should set NIMBLE_DIR to the per-version sandbox directory", function()
             local nimble_dir = exec("mise exec nim@2.2.4 -- sh -c 'echo $NIMBLE_DIR' 2>&1"):gsub("%s+$", "")
+            nimble_dir = nimble_dir:match("[^\n]*$")
 
-            if nimble_dir ~= "" then
-                assert.matches("nim", nimble_dir, "NIMBLE_DIR should contain 'nim'")
-                assert.matches("2%.2%.4", nimble_dir, "NIMBLE_DIR should contain version 2.2.4")
-            end
-            -- Not failing if empty as it may be intentional with local nimbledeps
+            -- env_keys.lua Priority 3 sets NIMBLE_DIR = <install>/nimble for the active
+            -- version. With the ambient developer NIMBLE_DIR scrubbed by the harness, this
+            -- must resolve to the sandbox-installed nim@2.2.4, isolating packages per
+            -- version. Assert the FULL expected path so a regression to the global nim or
+            -- a wrong version is caught.
+            local nim_path = exec("mise where nim@2.2.4 2>&1"):gsub("%s+$", "")
+            nim_path = nim_path:match("[^\n]*$")
+            local expected = nim_path .. "/nimble"
+
+            assert.are.equal(expected, nimble_dir, "NIMBLE_DIR should be the sandbox per-version nimble dir")
+            -- Defensive: the resolved nim install itself must live inside the sandbox.
+            assert.is_truthy(
+                nim_path:find(MISE_TEST_DIR, 1, true),
+                "nim install not inside sandbox (" .. MISE_TEST_DIR .. "): " .. nim_path
+            )
         end)
     end)
 
@@ -339,10 +411,14 @@ describe("Mise Plugin Integration Tests", function()
 
             -- Should fail because no binary is available for this old version
             assert.is_false(success, "Installation should have failed but succeeded: " .. output)
-            assert.matches(
-                "no prebuilt binary available",
-                output:lower(),
-                "Error message should indicate no binary available"
+            -- Match the exact user-facing message emitted by hooks/pre_install.lua
+            -- (lowercased): "No pre-built binary available for version <v> on <os>/<arch>.
+            -- User preference install_method='binary' prevents building from source."
+            -- Use a literal (plain) find so the hyphen in "pre-built" is not treated as
+            -- a Lua pattern metacharacter.
+            assert.is_truthy(
+                output:lower():find("no pre-built binary available for version 0.8.14", 1, true),
+                "Error message should indicate no pre-built binary available. Output: " .. output
             )
         end)
     end)

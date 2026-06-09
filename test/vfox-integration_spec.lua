@@ -13,35 +13,87 @@ local function setenv(name, value)
     env_vars[name] = value
 end
 
+-- Ambient variables that leak the developer's GLOBALLY-active mise/nim toolchain
+-- into the vfox sandbox and break hermeticity. mise's shell activation exports
+-- these into every interactive shell (and thus into the busted process). In
+-- particular an inherited NIMBLE_DIR is honored by hooks/env_keys.lua Priority 1
+-- ("respect existing NIMBLE_DIR"), so without scrubbing, the activated vfox nim
+-- would still report the developer's global NIMBLE_DIR (e.g. nim/2.2.10/nimble)
+-- and nimble would compile against the global nim instead of the sandbox nim@2.2.4.
+local SCRUBBED_ENV_VARS = {
+    "NIMBLE_DIR",
+    "MISE_SHELL",
+    "MISE_DATA_DIR",
+    "MISE_CACHE_DIR",
+    "MISE_CONFIG_DIR",
+    "MISE_DEBUG",
+    "MISE_EXPERIMENTAL",
+    "MISE_VERBOSE",
+    "MISE_TRUSTED_CONFIG_PATHS",
+    "__MISE_ORIG_PATH",
+    "__MISE_DIFF",
+    "__MISE_SESSION",
+    "__MISE_WATCH",
+    "__MISE_ZSH_PRECMD_RUN",
+    "__MISE_ZSH_CHPWD_RAN",
+}
+
+-- A clean PATH that excludes the developer's globally-active mise tool installs
+-- (notably ~/.local/share/mise/installs/nim/<global>/bin). Homebrew is included so
+-- the `vfox` and `gh` binaries remain resolvable. The sandbox nim is reached only
+-- via `vfox activate`, never via this PATH.
+local SANITIZED_PATH = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
 local function build_env_prefix()
+    -- Emit shell statements (not an `env` wrapper) so the prefix composes with
+    -- compound commands containing shell builtins like `cd ... && nim ...` and
+    -- `eval "$(vfox activate bash)"`. Everything runs through `/bin/sh -c`
+    -- (io.popen / os.execute). Order: unset leaking ambient vars, pin a sanitized
+    -- PATH, then export the sandbox vars (e.g. VFOX_HOME).
     local parts = {}
+
+    local unset_names = {}
+    for _, name in ipairs(SCRUBBED_ENV_VARS) do
+        if env_vars[name] == nil then
+            table.insert(unset_names, name)
+        end
+    end
+    if #unset_names > 0 then
+        table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
+    end
+
+    table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+
     for name, value in pairs(env_vars) do
-        table.insert(parts, string.format("%s='%s'", name, value))
+        table.insert(parts, string.format("export %s='%s';", name, value))
     end
-    if #parts > 0 then
-        return table.concat(parts, " ") .. " "
-    end
-    return ""
+
+    return table.concat(parts, " ") .. " "
 end
+
+-- Sentinel used to recover the wrapped command's exit status from stdout.
+-- LuaJIT's io.popen():close() returns only `true` regardless of the child exit
+-- code (unlike PUC Lua 5.2+, which returns true/nil, "exit", code). Relying on
+-- close() therefore reports EVERY command as a success, silently defeating the
+-- success/failure assertions (e.g. the Error Handling test that expects a failed
+-- install). We append `printf MARKER$?` after the command so the real exit status
+-- is carried back in the captured output and parsed deterministically.
+local EXIT_MARKER = "__VFOX_NIM_EXIT__"
 
 -- Helper functions
 local function exec(cmd)
-    local full_cmd = build_env_prefix() .. cmd
+    -- Wrap the (possibly compound) command in a group so $? reflects its exit
+    -- status before the trailing 2>&1 redirect is applied.
+    local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
     local handle = io.popen(full_cmd .. " 2>&1")
     local result = handle:read("*a")
-    local exit_code = { handle:close() }
-    -- In Lua 5.1, close() returns true/false
-    -- In Lua 5.2+, close() returns true/nil, exit_type, exit_code
-    local success
-    if type(exit_code[1]) == "boolean" then
-        success = exit_code[1]
-    elseif type(exit_code[1]) == "number" then
-        success = exit_code[1] == 0
-    elseif exit_code[3] then
-        success = exit_code[3] == 0
-    else
-        success = true
-    end
+    handle:close()
+
+    -- Recover the exit status from the sentinel, then strip it from the output.
+    local code = result:match(EXIT_MARKER .. "(%d+)%s*$")
+    result = result:gsub(EXIT_MARKER .. "%d*%s*$", "")
+    local success = code == "0"
+
     return result, success
 end
 
@@ -74,6 +126,28 @@ local function dir_exists(path)
     return exec_status("test -d '" .. path .. "'")
 end
 
+-- Run a shell command with nim@2.2.4 activated via a project-local .tool-versions
+-- file. This is vfox's reliable, hermetic activation path: inside a directory that
+-- declares `nim 2.2.4`, `eval "$(vfox activate bash)"` materializes a per-project
+-- .vfox/sdks/nim symlink, prepends its bin to PATH, and exports NIMBLE_DIR. (Global
+-- `vfox use -g` activation does NOT take effect in a non-interactive `bash -c`
+-- subshell — it needs a persistent shell hook session — so we never rely on it.)
+-- The `inner` string runs after activation, with cwd at the project dir.
+local function exec_with_nim(inner)
+    local proj = os.tmpname()
+    os.remove(proj)
+    os.execute("mkdir -p '" .. proj .. "'")
+    local f = io.open(proj .. "/.tool-versions", "w")
+    f:write("nim 2.2.4\n")
+    f:close()
+
+    local script = 'cd "' .. proj .. '" && eval "$(vfox activate bash)" && ' .. inner
+    local output, success = exec("bash -c '" .. script:gsub("'", "'\\''") .. "'")
+
+    os.execute("rm -rf '" .. proj .. "'")
+    return output, success, proj
+end
+
 local function get_env(name, default)
     return os.getenv(name) or default or ""
 end
@@ -103,6 +177,11 @@ describe("vfox Plugin Integration Tests", function()
     -- §3.3); this caveat is validated by the first Windows integration CI run, not locally.
     local zip_path = os.tmpname() .. "-vfox-nim-test.zip"
 
+    -- Sandbox vfox home so installs, plugins, and `vfox use -g` writes are fully
+    -- contained and never touch the developer's real ~/.vfox. VFOX_HOME is vfox's
+    -- documented home-directory override.
+    local VFOX_TEST_HOME = os.tmpname():gsub("%.%w+$", "") .. ".vfox-nim-test-home"
+
     -- Setup runs once before all tests
     setup(function()
         setup_github_token()
@@ -117,13 +196,20 @@ describe("vfox Plugin Integration Tests", function()
         local vfox_version = exec("vfox --version"):gsub("%s+$", "")
         print("✓ vfox version: " .. vfox_version)
 
+        -- Create and activate the sandbox vfox home BEFORE any vfox invocation so
+        -- every command below is hermetic.
+        os.execute("mkdir -p '" .. VFOX_TEST_HOME .. "'")
+        setenv("VFOX_HOME", VFOX_TEST_HOME)
+        print("✓ Sandboxed vfox home: " .. VFOX_TEST_HOME)
+
         -- Set install method for faster tests
         setenv("VFOX_NIM_INSTALL_METHOD", "binary")
         print("✓ Using install_method='binary' for tests")
 
-        -- Add the plugin using git archive
+        -- Add the plugin using git archive. All vfox calls carry build_env_prefix()
+        -- so they target the sandbox VFOX_HOME, not the developer's real ~/.vfox.
         print("\n→ Adding plugin for local testing...")
-        os.execute("vfox remove -y nim 2>/dev/null || true")
+        os.execute(build_env_prefix() .. "vfox remove -y nim 2>/dev/null || true")
 
         -- Create a zip archive of the current repository (zip_path is the describe-scoped local)
         local archive_result =
@@ -131,7 +217,7 @@ describe("vfox Plugin Integration Tests", function()
         assert(archive_result == true or archive_result == 0, "Failed to create git archive")
 
         -- Add the plugin from the zip file
-        local add_result = os.execute("vfox add --source '" .. zip_path .. "' --alias nim 2>&1")
+        local add_result = os.execute(build_env_prefix() .. "vfox add --source '" .. zip_path .. "' --alias nim 2>&1")
         assert(add_result == true or add_result == 0, "Failed to add plugin from zip")
 
         print("✓ Plugin added from local zip\n")
@@ -144,12 +230,17 @@ describe("vfox Plugin Integration Tests", function()
         print("========================================\n")
 
         print("→ Removing plugin...")
-        os.execute("vfox remove -y nim 2>/dev/null || true")
+        os.execute(build_env_prefix() .. "vfox remove -y nim 2>/dev/null || true")
 
         -- Remove the zip file if it exists (portable; removes exactly the file setup created)
         os.remove(zip_path)
 
-        print("✓ Plugin removed")
+        -- Remove the entire sandbox vfox home so nothing persists between runs.
+        if VFOX_TEST_HOME ~= "" and dir_exists(VFOX_TEST_HOME) then
+            os.execute("rm -rf '" .. VFOX_TEST_HOME .. "'")
+        end
+
+        print("✓ Plugin removed and sandbox home cleaned")
     end)
 
     describe("Plugin Setup", function()
@@ -193,98 +284,97 @@ describe("vfox Plugin Integration Tests", function()
     end)
 
     describe("Nim Execution", function()
-        before_each(function()
-            -- Activate the installed version
-            os.execute("vfox use -g nim@2.2.4 2>&1")
-            os.execute('eval "$(vfox activate bash)"')
-        end)
-
         it("should execute nim --version", function()
-            -- Use vfox use -g to set global version
-            os.execute("vfox use -g nim@2.2.4 2>&1")
-
-            local output, success = exec("bash -c 'eval \"$(vfox activate bash)\" && nim --version' 2>&1")
-            assert.is_true(success, "nim --version failed")
+            -- nim writes its version banner to stderr; capture it.
+            local output, success = exec_with_nim("nim --version 2>&1")
+            assert.is_true(success, "nim --version failed: " .. output)
             assert.matches("Nim Compiler", output)
+            -- Pin the exact version so a regression to the wrong nim is caught.
+            assert.is_truthy(output:find("Version 2.2.4", 1, true), "nim is not version 2.2.4: " .. output)
         end)
 
         it("should have nimble available", function()
-            local output, success = exec("bash -c 'eval \"$(vfox activate bash)\" && nimble --version' 2>&1")
-            assert.is_true(success, "nimble --version failed")
+            local output, success = exec_with_nim("nimble --version 2>&1")
+            assert.is_true(success, "nimble --version failed: " .. output)
             assert.matches("nimble", output:lower())
         end)
 
+        it("should resolve nim from the activated vfox sdk, not a global toolchain", function()
+            -- `which nim` must point at the per-project .vfox/sdks symlink created by
+            -- activation, proving the sandbox toolchain (not a leaked global nim) is used.
+            local output, success = exec_with_nim("command -v nim")
+            assert.is_true(success, "command -v nim failed: " .. output)
+            local nim_path = output:gsub("%s+$", ""):match("[^\n]*$")
+            assert.is_truthy(
+                nim_path:find("/.vfox/sdks/nim/bin/nim", 1, true),
+                "nim not resolved from the activated vfox sdk: " .. nim_path
+            )
+        end)
+
         it("should compile and run a simple Nim program", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
-
-            local f = io.open(test_dir .. "/hello.nim", "w")
-            f:write('echo "Hello from Nim!"\n')
-            f:close()
-
-            local output, success =
-                exec('bash -c \'eval "$(vfox activate bash)" && cd "' .. test_dir .. "\" && nim c -r hello.nim' 2>&1")
-            os.execute("rm -rf '" .. test_dir .. "'")
-
+            -- Write the program into the activated project dir so it compiles there.
+            local inner = "printf 'echo \"Hello from Nim!\"\\n' > hello.nim && nim c -r hello.nim 2>&1"
+            local output, success = exec_with_nim(inner)
             assert.is_true(success, "Failed to compile simple Nim program: " .. output)
             assert.matches("Hello from Nim!", output)
         end)
     end)
 
     describe("Environment Variables", function()
-        it("should set NIMBLE_DIR correctly", function()
-            local nimble_dir =
-                exec("bash -c 'eval \"$(vfox activate bash)\" && echo $NIMBLE_DIR' 2>&1"):gsub("%s+$", "")
+        it("should set NIMBLE_DIR to the activated per-project nimble directory", function()
+            local nimble_dir, success = exec_with_nim('echo "NIMBLE_DIR=$NIMBLE_DIR"')
+            assert.is_true(success, "activation failed: " .. nimble_dir)
+            nimble_dir = nimble_dir:gsub("%s+$", ""):match("NIMBLE_DIR=([^\n]*)")
+            assert.is_truthy(nimble_dir and nimble_dir ~= "", "NIMBLE_DIR was not set by activation")
 
-            if nimble_dir ~= "" then
-                assert.matches("nim", nimble_dir, "NIMBLE_DIR should contain 'nim'")
-                assert.matches("2%.2%.4", nimble_dir, "NIMBLE_DIR should contain version 2.2.4")
-            end
-            -- Not failing if empty as it may be intentional with local nimbledeps
+            -- env_keys.lua sets NIMBLE_DIR = <sdk>/nimble. With the developer's ambient
+            -- NIMBLE_DIR scrubbed, vfox activation must produce the per-project sdk path
+            -- (.vfox/sdks/nim/nimble), isolating packages to the activated install. The
+            -- exact suffix is asserted so a regression to the developer's global
+            -- NIMBLE_DIR (e.g. .../mise/installs/nim/2.2.10/nimble) is caught.
+            assert.is_truthy(
+                nimble_dir:find("/.vfox/sdks/nim/nimble", 1, true),
+                "NIMBLE_DIR is not the activated vfox sdk nimble dir: " .. nimble_dir
+            )
         end)
     end)
 
     describe("Configuration Files", function()
-        it("should support .tool-versions file", function()
+        it("should activate the nim version declared in a .tool-versions file", function()
+            -- Create a project dir that declares nim 2.2.4 via .tool-versions, then ask
+            -- vfox which version it considers current there. This verifies real
+            -- .tool-versions recognition rather than merely that the file was written.
             local test_dir = os.tmpname()
             os.remove(test_dir)
             os.execute("mkdir -p '" .. test_dir .. "'")
-
-            -- Create .tool-versions file
             local f = io.open(test_dir .. "/.tool-versions", "w")
             f:write("nim 2.2.4\n")
             f:close()
 
-            -- Check if vfox recognizes it
-            local _ = exec("bash -c 'cd \"" .. test_dir .. '" && eval "$(vfox activate bash)" && vfox current\' 2>&1')
+            local output, success =
+                exec("bash -c 'cd \"" .. test_dir .. '" && eval "$(vfox activate bash)" && vfox current nim\'')
 
             os.execute("rm -rf '" .. test_dir .. "'")
 
-            -- vfox may need explicit use, so we just verify the file was created correctly
-            assert.is_true(true, "Tool versions file created")
+            assert.is_true(success, "vfox current nim failed in .tool-versions dir: " .. output)
+            assert.matches("2%.2%.4", output, "vfox did not report nim 2.2.4 as current for the .tool-versions dir")
         end)
     end)
 
     describe("Nimble Package Manager", function()
-        it("should install a nimble package", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+        it("should install a nimble package into the activated sdk", function()
+            -- Install argparse, then deterministically verify it is present via
+            -- `nimble list --installed` (exit-code + name check) rather than scraping
+            -- the non-deterministic install banner. Both run under the same activated
+            -- toolchain so NIMBLE_DIR points at the per-project vfox sdk.
+            local inner = "nimble install -y argparse 2>&1 && nimble list --installed 2>&1"
+            local output, success = exec_with_nim(inner)
 
-            local output, success = exec(
-                'bash -c \'eval "$(vfox activate bash)" && cd "'
-                    .. test_dir
-                    .. "\" && echo y | nimble install -y argparse' 2>&1"
+            assert.is_true(success, "nimble install/list failed: " .. output)
+            assert.is_truthy(
+                output:lower():find("argparse", 1, true),
+                "argparse not reported as installed by nimble. Output: " .. output
             )
-            os.execute("rm -rf '" .. test_dir .. "'")
-
-            assert.is_true(success, "nimble install failed: " .. output)
-            local lower_output = output:lower()
-            local has_success_msg = (lower_output:match("success") ~= nil)
-                or (lower_output:match("installed") ~= nil)
-                or (lower_output:match("already") ~= nil)
-            assert.is_true(has_success_msg, "nimble install didn't show expected success message. Output: " .. output)
         end)
     end)
 
@@ -304,7 +394,7 @@ describe("vfox Plugin Integration Tests", function()
 
     describe("Install Methods", function()
         it("should install with VFOX_NIM_INSTALL_METHOD='auto'", function()
-            os.execute("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
+            os.execute(build_env_prefix() .. "echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
             setenv("VFOX_NIM_INSTALL_METHOD", "auto")
             local output, success = exec("vfox install --yes nim@2.2.4 2>&1")
@@ -318,7 +408,7 @@ describe("vfox Plugin Integration Tests", function()
 
         it("should install with VFOX_NIM_INSTALL_METHOD='source'", function()
             -- Note: This test can be very slow as it builds from source
-            os.execute("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
+            os.execute(build_env_prefix() .. "echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
             setenv("VFOX_NIM_INSTALL_METHOD", "source")
             local output, success = exec("vfox install --yes nim@2.2.4 2>&1")
@@ -340,10 +430,13 @@ describe("vfox Plugin Integration Tests", function()
 
             -- Should fail because no binary is available for this old version
             assert.is_false(success, "Installation should have failed but succeeded: " .. output)
-            assert.matches(
-                "no prebuilt binary available",
-                output:lower(),
-                "Error message should indicate no binary available"
+            -- Match the exact user-facing message emitted by hooks/pre_install.lua
+            -- (lowercased): "No pre-built binary available for version <v> on <os>/<arch>.
+            -- User preference install_method='binary' prevents building from source."
+            -- Literal (plain) find so the hyphen in "pre-built" is not a Lua-pattern char.
+            assert.is_truthy(
+                output:lower():find("no pre-built binary available for version 0.8.14", 1, true),
+                "Error message should indicate no pre-built binary available. Output: " .. output
             )
         end)
     end)
