@@ -18,6 +18,9 @@ PLUGIN = {
     -- Optional: Repository URL for plugin updates
     updateUrl = "https://github.com/elijahr/vfox-nim",
 
+    -- Optional: Project homepage (registry listings surface this)
+    homepage = "https://github.com/elijahr/vfox-nim",
+
     -- Optional: Minimum vfox runtime version required
     minRuntimeVersion = "0.2.0",
 

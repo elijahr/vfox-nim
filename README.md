@@ -17,6 +17,10 @@ Automatically selects the fastest installation method for your platform. For pla
 | macOS x64   |        ❌         |       ✅       |      ✅      | ~60s         |
 | macOS ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
 
+> **Windows.** The plugin logic supports Windows; Windows CI verification is
+> deferred (the matrix legs are non-blocking this release). Linux and macOS are
+> CI-verified.
+
 - Configurable installation method (auto/binary/source)
 - Includes Nim compiler, Nimble package manager, and tools
 
@@ -25,8 +29,8 @@ Automatically selects the fastest installation method for your platform. For pla
 ### With mise
 
 ```bash
-# Install the plugin
-mise plugins install nim
+# Install the plugin directly from the Git URL (works today, no registry needed)
+mise plugin install https://github.com/elijahr/vfox-nim
 
 # Install latest Nim
 mise install nim@latest
@@ -41,8 +45,8 @@ mise use -g nim@latest
 ### With vfox
 
 ```bash
-# Install the plugin
-vfox add nim
+# Install the plugin from the source archive (works today, no registry needed)
+vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
 
 # Install latest Nim
 vfox install nim@latest
@@ -50,6 +54,13 @@ vfox install nim@latest
 # Set as global default
 vfox use -g nim@latest
 ```
+
+> **Installation paths / registry.** The URL/source install commands above work
+> immediately against this repository. The shorter registry-alias forms
+> (`mise plugins install nim` and `vfox add nim`) become available only after a
+> one-time registry submission (the mise registry for the mise alias; the
+> version-fox registry for the vfox alias). The exact registry repository and
+> submission process are confirmed during the release checklist, not asserted here.
 
 ## Configuration
 
@@ -140,14 +151,47 @@ mise ls nim
 ## Development
 
 ```bash
+# 1. Trust the repo's mise config (an untrusted mise.toml breaks every shimmed
+#    command with "not trusted").
+mise trust
+
+# 2. Provision a durable Lua 5.1-ABI toolchain (LuaJIT + busted/luacheck) OUTSIDE
+#    /tmp so it survives reboots. LuaJIT is the Lua 5.1-ABI interpreter the suite
+#    runs green under (~0.5s). Install LuaJIT and luarocks first if absent:
+#    `brew install luajit luarocks`.
+luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
+  --tree "$HOME/.vfox-nim-rocks" install busted
+luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
+  --tree "$HOME/.vfox-nim-rocks" install luacheck
+
 # Link plugin for development
 mise plugin link --force nim .
 
-# Run tests
+# Fast unit suite (Tiers I+II — mocked wiring + install-logic). The rocks-tree
+# bin must be on PATH so `busted` resolves:
+PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run test-unit
+# Equivalent direct invocation (set LUA_PATH/LUA_CPATH to the rocks tree first):
+#   export LUA_PATH="$HOME/.vfox-nim-rocks/share/lua/5.1/?.lua;$HOME/.vfox-nim-rocks/share/lua/5.1/?/init.lua;./?.lua;./?/init.lua;;"
+#   export LUA_CPATH="$HOME/.vfox-nim-rocks/lib/lua/5.1/?.so;;"
+#   luajit "$HOME/.vfox-nim-rocks/bin/busted" spec/
+
+# Install-smoke test (downloads and runs a real Nim toolchain over the network):
 mise run test
 
-# Run linting
+# Lint + format. These run the pre-commit hooks. pre-commit's `luacheck` hook
+# needs `luacheck` on PATH — it is NOT provided by mise.toml (which only pins
+# stylua + actionlint). Install it into the durable rocks tree above and expose
+# its bin, e.g.:
+#   PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run lint
+# Without luacheck on PATH, commits fail with "Executable `luacheck` not found".
+# Lint/format use the mise-pinned stylua 2.3.1 — always invoke via mise so CI and
+# local agree (a system stylua may be a different version, e.g. 2.5.2):
 mise run lint
+mise run format
+
+# Reproduce the Linux CI legs locally (Docker; macOS/Windows legs are not act-runnable):
+act -j lua_tests                                      # Tier I+II Linux leg
+act -j vfox_integration_test -s GITHUB_TOKEN=<token>  # Tier III Linux leg
 ```
 
 ## License
