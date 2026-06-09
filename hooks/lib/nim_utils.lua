@@ -141,10 +141,20 @@ function M.get_official_url(version, os_name, arch)
     return nil
 end
 
--- Check if URL exists (HEAD request)
+-- Check if URL exists (HEAD request).
+-- Only api.github.com calls carry the GitHub Authorization header. Release-download
+-- URLs (github.com/.../releases/download/...) and nim-lang.org are public and 302-redirect
+-- to a presigned asset host that REJECTS a forwarded Authorization header with HTTP 401;
+-- attaching the token there makes url_exists wrongly report the asset as missing. The
+-- 60/hr unauthenticated rate limit applies to api.github.com, not to asset downloads, so
+-- non-api hosts need no auth header at all.
 function M.url_exists(url)
     local http = require("http")
-    local resp, err = http.head({ url = url, headers = M.get_github_headers() })
+    local headers = {}
+    if url:match("^https://api%.github%.com") then
+        headers = M.get_github_headers()
+    end
+    local resp, err = http.head({ url = url, headers = headers })
     if err ~= nil then
         return false
     end

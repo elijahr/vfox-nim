@@ -233,3 +233,62 @@ describe("OS detection (is_macos/is_windows)", function()
         assert.equals(true, utils.is_macos())
     end)
 end)
+
+-- Regression: url_exists must NOT forward the GitHub Authorization header to
+-- release-download / nim-lang.org hosts. Those URLs 302-redirect to a presigned
+-- asset host that REJECTS a forwarded Authorization header with HTTP 401, so when
+-- GITHUB_TOKEN is set (CI + both test harnesses always set it) url_exists wrongly
+-- returns false and find_exact_nightly_url exhausts every date offset, surfacing as
+-- "No pre-built binary available". The auth header is only legitimate (and only
+-- needed for the 60/hr rate limit) on api.github.com.
+describe("url_exists auth-header scoping", function()
+    local utils = require("lib.nim_utils")
+    local orig_head, orig_getenv, captured_headers
+
+    before_each(function()
+        orig_head = _G.http.head
+        orig_getenv = os.getenv
+        captured_headers = nil
+        -- Capture exactly the headers url_exists passes to http.head, and return a
+        -- 200 so url_exists's own return value is governed solely by the header logic.
+        _G.http.head = function(opts)
+            captured_headers = opts.headers
+            return { status_code = 200 }, nil
+        end
+        -- Token present: this is the precise condition that triggered the bug.
+        os.getenv = function(name)
+            if name == "GITHUB_TOKEN" then
+                return "ghp_TESTTOKEN1234567890"
+            end
+            return orig_getenv(name)
+        end
+    end)
+
+    after_each(function()
+        _G.http.head = orig_head
+        os.getenv = orig_getenv
+    end)
+
+    it("sends NO Authorization header to a releases/download URL (with token set)", function()
+        local result = utils.url_exists(
+            "https://github.com/nim-lang/nightlies/releases/download/"
+                .. "2025-03-17-version-2-2-a1b2c3d4/nim-2.2.4-macosx_arm64.tar.xz"
+        )
+        assert.equals(true, result)
+        -- Exact: the header table for a non-api host must have NO Authorization field.
+        assert.is_nil(captured_headers["Authorization"])
+    end)
+
+    it("sends NO Authorization header to a nim-lang.org URL (with token set)", function()
+        local result = utils.url_exists("https://nim-lang.org/download/nim-2.2.4-linux_x64.tar.xz")
+        assert.equals(true, result)
+        assert.is_nil(captured_headers["Authorization"])
+    end)
+
+    it("DOES send the Authorization header to api.github.com (with token set)", function()
+        local result = utils.url_exists("https://api.github.com/repos/nim-lang/Nim/commits/a1b2c3d4")
+        assert.equals(true, result)
+        -- Exact: api calls still authenticate with the token form "token <TOKEN>".
+        assert.are.same({ ["Authorization"] = "token ghp_TESTTOKEN1234567890" }, captured_headers)
+    end)
+end)

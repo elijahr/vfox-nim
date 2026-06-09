@@ -142,8 +142,8 @@ describe("Mise Plugin Integration Tests", function()
 
         -- Link the plugin
         print("\n→ Linking plugin for local testing...")
-        os.execute("mise plugin uninstall nim 2>/dev/null || true")
-        os.execute("mise plugin link nim '" .. PLUGIN_DIR .. "'")
+        os.execute(build_env_prefix() .. "mise plugin uninstall nim 2>/dev/null || true")
+        os.execute(build_env_prefix() .. "mise plugin link nim '" .. PLUGIN_DIR .. "'")
         print("✓ Plugin linked from local path\n")
     end)
 
@@ -154,7 +154,7 @@ describe("Mise Plugin Integration Tests", function()
         print("========================================\n")
 
         print("→ Unlinking plugin...")
-        os.execute("mise plugin uninstall nim 2>/dev/null || true")
+        os.execute(build_env_prefix() .. "mise plugin uninstall nim 2>/dev/null || true")
         print("✓ Plugin unlinked")
 
         if MISE_TEST_DIR ~= "" and dir_exists(MISE_TEST_DIR) then
