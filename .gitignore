@@ -19,3 +19,6 @@ Thumbs.db
 *.log
 /node_modules
 /.available.cache
+
+# Local tool-version artifact created by integration test runs
+/.vfox.toml
