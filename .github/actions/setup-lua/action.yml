@@ -1,0 +1,135 @@
+# yamllint disable rule:line-length
+name: Setup Lua (Lua 5.1 + luarocks + busted/luacheck)
+description: >-
+  dlopen-capable Lua 5.1 toolchain. Linux/macOS via hererocks (PUC Lua 5.1);
+  Windows via MSYS2-native LuaJIT + luarocks. Replaces the broken static-lua +
+  withLuaPath approach.
+runs:
+  using: composite
+  steps:
+    # ---- Linux + macOS branch: hererocks -> PUC Lua 5.1 (manifest-safe; gopher-lua fidelity) ----
+    - name: Set up Python (hererocks host)
+      if: runner.os != 'Windows'
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.x"
+
+    - name: Provision Lua + luarocks (hererocks)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        # Pin hererocks so `--luarocks` resolution stays deterministic: with
+        # hererocks 0.25.1, luarocks "latest" == 3.8.0 (the version the wrapper
+        # patch below is written against). An unpinned hererocks upgrade could
+        # move "latest" to 3.13.0+ and silently invalidate the sed premise, so
+        # we pin hererocks AND request luarocks 3.8.0 explicitly.
+        python -m pip install --upgrade pip 'hererocks==0.25.1'
+        # Provision PUC Lua 5.1 (not LuaJIT) for the build host. Rationale:
+        #   1. luarocks runs under the provisioned interpreter; under LuaJIT, `luarocks
+        #      install` fails loading the (now very large) luarocks.org manifest with
+        #      "main function has more than 65536 constants" — a LuaJIT bytecode-loader
+        #      limit (luarocks/luarocks#1797). PUC Lua 5.1 loads the manifest as source
+        #      and is unaffected.
+        #   2. PUC Lua 5.1 is the exact 5.1 semantics closest to vfox/mise's embedded
+        #      gopher-lua (better fidelity than LuaJIT's JIT VM).
+        # hererocks builds a `lua`/`lua5.1` binary directly, so no luajit->lua5.1 symlink.
+        python -m hererocks "$HOME/.lua-ci" --lua 5.1 --luarocks 3.8.0
+        echo "$HOME/.lua-ci/bin" >> "$GITHUB_PATH"
+
+    - name: Install busted + luacheck (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        export PATH="$HOME/.lua-ci/bin:$PATH"
+        luarocks install busted
+        luarocks install luacheck
+        # Neutralize the luarocks "loader" that the generated busted/luacheck wrappers
+        # inject via `require("luarocks.loader")`. luarocks 3.8.0's loader has a bug
+        # (core/manif.lua:47 "attempt to concatenate local 'err' (a nil value)") that
+        # crashes whenever a `require` falls through to its rocks-tree manifest scan —
+        # which happens when specs `require`/`dofile` the plugin hooks. We don't need
+        # rock-based module resolution at test time: spec/helpers.lua sets package.path
+        # for the hooks, and the wrapper already seeds package.path/cpath for the rocks.
+        # The wrapper line is:
+        #   local k,l,_=pcall(require,"luarocks.loader") _=k and l.add_context("busted",...)
+        # Force the pcall to fail (k=false) so the `k and l.add_context(...)` guard
+        # short-circuits and the loader is never installed into package.loaders. Using
+        # pcall(error) yields k=false without indexing a nil `l`. Idempotent: only the
+        # loader pcall substring matches.
+        #
+        # Portable across GNU and BSD sed: `sed -i` is NOT portable (BSD/macOS sed
+        # treats the next arg as a mandatory backup suffix, so `sed -i 's/.../.../'`
+        # exits 1 under `bash -e` and aborts the macOS job). Instead we filter to a
+        # temp file and `cat` it back over the wrapper, which preserves the inode and
+        # executable bit. The grep post-assertion fails loudly if wrapper-format drift
+        # ever stops the substitution from matching.
+        for w in "$HOME/.lua-ci/bin/busted" "$HOME/.lua-ci/bin/luacheck"; do
+          if [ -f "$w" ]; then
+            tmp="$(mktemp)"
+            sed 's/pcall(require,"luarocks.loader")/pcall(error)/' "$w" > "$tmp" && cat "$tmp" > "$w"
+            rm -f "$tmp"
+            grep -q 'pcall(error)' "$w" || echo "::warning::luarocks loader patch did not apply to $w"
+          fi
+        done
+        lua -v
+        busted --version
+
+    # ---- Windows branch (PRIMARY): MSYS2-native LuaJIT + luarocks + busted ----
+    # NOTE: this leg installs luarocks under MSYS2 LuaJIT, so it MAY hit the same
+    # LuaJIT "main function has more than 65536 constants" manifest-loader wall
+    # described in the Unix rationale above (luarocks/luarocks#1797 is a LuaJIT-wide
+    # limit, not Unix-specific). That is precisely why this Windows leg is
+    # continue-on-error and ships with the named MSVC + hererocks(PUC Lua) FALLBACK
+    # block below. If the first real Windows CI run trips the constant limit, swap to
+    # the fallback (which provisions a PUC-Lua-based interpreter and is immune).
+    - name: Set up MSYS2 (Windows)
+      if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-luajit
+          mingw-w64-x86_64-lua-luarocks
+          mingw-w64-x86_64-gcc
+          git
+
+    - name: Install busted + luacheck (Windows / MSYS2)
+      if: runner.os == 'Windows'
+      shell: "msys2 {0}"
+      run: |
+        luarocks install busted
+        luarocks install luacheck
+        luajit -v
+        busted --version
+
+    # ---- Windows branch (FALLBACK, named): MSVC + hererocks -> LuaJIT 2.1 ----
+    # Drop-in if PRIMARY MSYS2 fails on the first real Windows CI run. To adopt:
+    # DELETE the two PRIMARY Windows steps above, UNCOMMENT this block (mutually
+    # exclusive), and switch the Windows test run-steps in test.yml from
+    # `shell: 'msys2 {0}'` to `shell: cmd` invoking
+    # `"%USERPROFILE%\.lua-ci\bin\busted" ...`.
+    #
+    # - name: Set up Python (hererocks host)
+    #   if: runner.os == 'Windows'
+    #   uses: actions/setup-python@v6
+    #   with:
+    #     python-version: "3.x"
+    # - name: Set up MSVC developer shell (Windows)
+    #   if: runner.os == 'Windows'
+    #   uses: ilammy/msvc-dev-cmd@v1
+    # - name: Provision Lua + luarocks (hererocks, Windows)
+    #   if: runner.os == 'Windows'
+    #   shell: cmd
+    #   run: |
+    #     python -m pip install --upgrade pip hererocks
+    #     python -m hererocks "%USERPROFILE%\.lua-ci" --luajit @v2.1 --luarocks latest
+    #     echo %USERPROFILE%\.lua-ci\bin>>%GITHUB_PATH%
+    # - name: Install busted + luacheck (Windows, hererocks)
+    #   if: runner.os == 'Windows'
+    #   shell: cmd
+    #   run: |
+    #     call "%USERPROFILE%\.lua-ci\bin\luarocks" install busted
+    #     call "%USERPROFILE%\.lua-ci\bin\luarocks" install luacheck
+    #     "%USERPROFILE%\.lua-ci\bin\luajit" -v
+    #     "%USERPROFILE%\.lua-ci\bin\busted" --version

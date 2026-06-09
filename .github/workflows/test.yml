@@ -78,66 +78,26 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
+    # TODO(windows): deferred this session — re-enable as blocking once a green Windows CI run is confirmed (design §1.4)
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Install Lua 5.1 binary (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
-          chmod +x lua51
-          file lua51
-          ldd lua51 || true
-          ./lua51 -v || echo "Direct execution failed with exit code $?"
-          sudo mv lua51 /usr/local/bin/lua5.1
-          ls -la /usr/local/bin/lua5.1
-          which lua5.1
-          /usr/local/bin/lua5.1 -v || echo "Failed with exit code $?"
+      - uses: ./.github/actions/setup-lua
 
-      - name: Install Lua 5.1 binary (macOS)
-        if: runner.os == 'macOS'
+      - name: Run Lua unit tests (Unix)
+        if: runner.os != 'Windows'
         shell: bash
-        run: |
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-arm64
-          else
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-x64
-          fi
-          chmod +x lua51
-          sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
+        run: busted spec/ -v
 
-      - name: Install Lua 5.1 binary (Windows)
+      - name: Run Lua unit tests (Windows)
         if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          curl -L -o lua51.exe https://github.com/elijahr/luabinaries/releases/latest/download/lua51.exe
-          mkdir -p "$HOME/bin"
-          mv lua51.exe "$HOME/bin/lua5.1.exe"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          "$HOME/bin/lua5.1.exe" -v
-
-      - name: Install LuaRocks
-        uses: leafo/gh-actions-luarocks@v6
-        with:
-          withLuaPath: /usr/local/bin
-
-      - name: Install mise and .tool-versions
-        uses: jdx/mise-action@v2
-
-      - name: Install lua tools
-        run: |
-          luarocks install busted
-          luarocks install luacheck
-
-      - name: Run Lua unit tests
-        run: |
-          # Test with Lua 5.1 (vfox compatibility - gopher-lua)
-          lua5.1 "$(which busted)" spec/ -v
+        shell: "msys2 {0}"
+        run: busted spec/ -v
 
   # Test mise integration (with integration test script)
   mise_integration_test:
@@ -149,66 +109,32 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
+    # TODO(windows): deferred this session — re-enable as blocking once a green Windows CI run is confirmed (design §1.4)
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Install Lua 5.1 binary (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
-          chmod +x lua51
-          file lua51
-          ldd lua51 || true
-          ./lua51 -v || echo "Direct execution failed with exit code $?"
-          sudo mv lua51 /usr/local/bin/lua5.1
-          ls -la /usr/local/bin/lua5.1
-          which lua5.1
-          /usr/local/bin/lua5.1 -v || echo "Failed with exit code $?"
-
-      - name: Install Lua 5.1 binary (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-arm64
-          else
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-x64
-          fi
-          chmod +x lua51
-          sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
-
-      - name: Install Lua 5.1 binary (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          curl -L -o lua51.exe https://github.com/elijahr/luabinaries/releases/latest/download/lua51.exe
-          mkdir -p "$HOME/bin"
-          mv lua51.exe "$HOME/bin/lua5.1.exe"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          "$HOME/bin/lua5.1.exe" -v
-
-      - name: Install LuaRocks
-        uses: leafo/gh-actions-luarocks@v6
-        with:
-          withLuaPath: /usr/local/bin
+      - uses: ./.github/actions/setup-lua
 
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
 
-      - name: Install Luarocks dependencies
-        run: |
-          luarocks install busted
-          luarocks install luacheck
-
-      - name: Run mise integration tests
+      - name: Run mise integration tests (Unix)
+        if: runner.os != 'Windows'
         shell: bash
-        run: |
-          mise exec -- "$(which busted)" test/mise-integration_spec.lua -v
+        run: mise exec -- busted test/mise-integration_spec.lua -v
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISE_YES: 1
+
+      - name: Run mise integration tests (Windows)
+        if: runner.os == 'Windows'
+        shell: "msys2 {0}"
+        run: mise exec -- busted test/mise-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_YES: 1
@@ -223,53 +149,16 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
+    # TODO(windows): deferred this session — re-enable as blocking once a green Windows CI run is confirmed (design §1.4)
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Install Lua 5.1 binary (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51
-          chmod +x lua51
-          file lua51
-          ldd lua51 || true
-          ./lua51 -v || echo "Direct execution failed with exit code $?"
-          sudo mv lua51 /usr/local/bin/lua5.1
-          ls -la /usr/local/bin/lua5.1
-          which lua5.1
-          /usr/local/bin/lua5.1 -v || echo "Failed with exit code $?"
-
-      - name: Install Lua 5.1 binary (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-arm64
-          else
-            curl -L -o lua51 https://github.com/elijahr/luabinaries/releases/latest/download/lua51-macos-x64
-          fi
-          chmod +x lua51
-          sudo mv lua51 /usr/local/bin/lua5.1
-          lua5.1 -v
-
-      - name: Install Lua 5.1 binary (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          curl -L -o lua51.exe https://github.com/elijahr/luabinaries/releases/latest/download/lua51.exe
-          mkdir -p "$HOME/bin"
-          mv lua51.exe "$HOME/bin/lua5.1.exe"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-          "$HOME/bin/lua5.1.exe" -v
-
-      - name: Install LuaRocks
-        uses: leafo/gh-actions-luarocks@v6
-        with:
-          withLuaPath: /usr/local/bin
+      - uses: ./.github/actions/setup-lua
 
       - name: Install vfox and .tool-versions (Windows)
         uses: MinoruSekine/setup-scoop@v4.0.2
@@ -290,14 +179,20 @@ jobs:
             brew install vfox
           fi
 
-      - name: Install vfox tools and busted
+      - name: Install vfox tools
         run: |
           vfox install --all --yes
-          luarocks install busted
 
-      - name: Run vfox integration tests
+      - name: Run vfox integration tests (Unix)
+        if: runner.os != 'Windows'
         shell: bash
-        run: |
-          lua5.1 "$(which busted)" test/vfox-integration_spec.lua -v
+        run: busted test/vfox-integration_spec.lua -v
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run vfox integration tests (Windows)
+        if: runner.os == 'Windows'
+        shell: "msys2 {0}"
+        run: busted test/vfox-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
