@@ -116,14 +116,19 @@ runs:
         LR="luarocks --lua-version 5.1 --lua-dir /mingw64"
         $LR install busted
         $LR install luacheck
-        # luarocks deploys the busted/luacheck launchers into its 5.1 deploy-bin dir,
-        # which is NOT /mingw64/bin. Copy them into /mingw64/bin (always on the
-        # MINGW64 PATH in every `msys2 {0}` step) so bare `busted`/`luacheck` resolve
-        # both here and in test.yml's separate Windows test step, without depending on
-        # $GITHUB_PATH (whose Windows-path entries don't reliably translate into the
-        # msys2 POSIX shell).
-        LRBIN="$($LR path --lr-bin)"
-        cp "$LRBIN"/busted "$LRBIN"/luacheck /mingw64/bin/
+        # luarocks deploys the launchers into the per-user deploy-bin
+        # ($HOME/.luarocks/bin), NOT /mingw64/bin (and `path --lr-bin` emits a
+        # ;-separated list of Windows-backslash paths under MSYS2, so don't parse it).
+        # Copy the launchers into /mingw64/bin (always on the MINGW64 PATH in every
+        # `msys2 {0}` step) so bare `busted`/`luacheck` resolve both here and in
+        # test.yml's separate Windows test step; fall back to a scoped find, then
+        # assert busted resolves so a future drift fails loudly here, not in the tests.
+        cp "$HOME/.luarocks/bin/busted" "$HOME/.luarocks/bin/luacheck" /mingw64/bin/ 2>/dev/null || \
+          for t in busted luacheck; do
+            f="$(find "$HOME/.luarocks" /mingw64 -name "$t" -type f 2>/dev/null | head -n1)"
+            [ -n "$f" ] && cp "$f" /mingw64/bin/
+          done
+        command -v busted >/dev/null || { echo "::error::busted not on PATH after provisioning"; exit 1; }
         # Smoke check against the actual 5.1 interpreter the package ships.
         lua5.1 -v
         busted --version
