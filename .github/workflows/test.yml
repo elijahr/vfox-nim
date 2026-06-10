@@ -123,6 +123,8 @@ jobs:
 
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
+        with:
+          install: false
 
       - name: Run mise integration tests (Unix)
         if: runner.os != 'Windows'

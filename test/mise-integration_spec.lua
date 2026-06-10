@@ -64,7 +64,20 @@ local function build_env_prefix()
         table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
     end
 
-    table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+    -- PATH handling is OS-aware. On Windows (detected the same way exec() does,
+    -- via package.config's path separator) the test runs under msys2, where the
+    -- hardcoded Unix SANITIZED_PATH would wipe out /mingw64/bin (busted's lua5.1,
+    -- coreutils), /usr/bin (msys coreutils), and the inherited mise.exe dir,
+    -- breaking every mise/nim/awk/printf/command -v call. The global-tool-scrub
+    -- hermeticity rationale doesn't apply on a clean CI runner, so we instead
+    -- PREPEND the msys2 dirs to the INHERITED PATH so busted's lua5.1, msys
+    -- coreutils, and the inherited mise.exe all resolve. On non-Windows we keep
+    -- the hardcoded SANITIZED_PATH unchanged to preserve macOS/Linux hermeticity.
+    if package.config:sub(1, 1) == "\\" then
+        table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
+    else
+        table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+    end
 
     for name, value in pairs(env_vars) do
         table.insert(parts, string.format("export %s='%s';", name, value))
