@@ -3,8 +3,120 @@
 -- Run with: busted test/vfox-integration_spec.lua
 
 -- Test environment setup
-local SCRIPT_DIR = debug.getinfo(1, "S").source:sub(2):match("(.*/)")
-local PLUGIN_DIR = SCRIPT_DIR .. ".."
+local IS_WINDOWS = package.config:sub(1, 1) == "\\"
+
+-- Normalize a path for COMPARISON only. Two Windows-specific normalizations:
+--   1. `\`->`/`: vfox/msys2 compose install paths with native backslashes while
+--      the spec asserts forward-slash segments (.../bin/nim), yielding mixed
+--      separators. Both forms are valid under msys2/mingw (real usage works), so
+--      equality must collapse separators rather than treat the difference as a
+--      failure.
+--   2. strip trailing CR/whitespace: msys2 command output can carry a trailing
+--      `\r` that the busted diff renders invisibly, making two "identical-looking"
+--      strings compare unequal. Strip it before comparing.
+-- No-op on Unix (no backslashes, no CR).
+local function normalize_sep(path)
+    return (path or ""):gsub("\\", "/"):gsub("[\r%s]+$", "")
+end
+
+-- On Windows the busted Lua is NATIVE MinGW Lua, so io.popen/os.execute spawn
+-- cmd.exe (NOT bash). The previous `bash -c '<posix>'` inline approach FAILED:
+-- cmd.exe parses the string first and mangles the nested quotes ("unexpected EOF").
+--
+-- The robust approach used here is a temp-script file: the full POSIX command
+-- string is written verbatim to a unique, cwd-relative script (e.g.
+-- ./.vfox-spawn-<n>.sh) and spawned via `bash <script>`. cmd.exe then sees only
+-- `bash .vfox-spawn-N.sh` -- no nested quoting to mangle. The script is written in
+-- binary mode with bare "\n" line endings (no "\r") so bash doesn't choke, and is
+-- always removed afterward (os.remove). A cwd-relative name avoids all
+-- Windows<->POSIX path translation: native-Windows Lua's cwd is the workspace and
+-- the bash spawned by cmd.exe inherits it, so the same relative path resolves
+-- identically for the Lua writer and the bash reader.
+--
+-- On non-Windows the EXACT prior direct-execution path is preserved (no temp file):
+-- the command already runs through /bin/sh, so macOS/Linux behavior is unchanged.
+
+-- Module-level counter guaranteeing unique temp-script names across spawns.
+local spawn_counter = 0
+
+-- Shared Windows-only temp-script runner. `cmd` is the fully-composed POSIX
+-- command string (build_env_prefix() + caller command + any sentinel/redirects),
+-- UNCHANGED in content. `want_output` selects capture mode:
+--   want_output=true  -> returns (captured_stdout_stderr, success)
+--   want_output=false -> returns ("", success) where success is the exit status
+-- On Windows the command is run via a temp script; on non-Windows it runs directly.
+local function run_posix(cmd, want_output)
+    if IS_WINDOWS then
+        spawn_counter = spawn_counter + 1
+        local script_relpath = "./.vfox-spawn-" .. os.time() .. "-" .. spawn_counter .. ".sh"
+        -- Binary mode + bare "\n" endings so bash never sees a stray "\r".
+        local script = io.open(script_relpath, "wb")
+        script:write("#!/usr/bin/env bash\n")
+        script:write(cmd)
+        script:write("\n")
+        script:close()
+
+        local output, success
+        if want_output then
+            local handle = io.popen("bash " .. script_relpath .. " 2>&1")
+            output = handle:read("*a")
+            -- LuaJIT close() returns only `true`; callers that need real exit
+            -- status (exec) parse the sentinel from `output` instead.
+            success = handle:close() and true or false
+        else
+            local result, _, exit_code = os.execute("bash " .. script_relpath)
+            output = ""
+            if type(result) == "number" then
+                success = result == 0
+            elseif type(result) == "boolean" then
+                success = result
+            elseif exit_code then
+                success = exit_code == 0
+            else
+                success = false
+            end
+        end
+
+        os.remove(script_relpath)
+        return output, success
+    end
+
+    -- Non-Windows: direct execution, byte-for-byte the prior behavior.
+    if want_output then
+        local handle = io.popen(cmd .. " 2>&1")
+        local output = handle:read("*a")
+        local success = handle:close() and true or false
+        return output, success
+    end
+
+    local result, _, exit_code = os.execute(cmd)
+    if type(result) == "number" then
+        return "", result == 0
+    elseif type(result) == "boolean" then
+        return "", result
+    elseif exit_code then
+        return "", exit_code == 0
+    end
+    return "", false
+end
+
+-- Run a POSIX command, ignoring its result. On Windows it routes through the
+-- temp-script mechanism; on non-Windows it runs directly via os.execute.
+local function raw_execute(cmd)
+    run_posix(cmd, false)
+end
+
+local PLUGIN_DIR
+if IS_WINDOWS then
+    -- Native-Windows Lua's debug source is a backslash path; normalize separators
+    -- so the dirname match and downstream interpolation into POSIX shell commands
+    -- are consistent. (No-op on Unix.)
+    local src = normalize_sep(debug.getinfo(1, "S").source:sub(2))
+    PLUGIN_DIR = src:match("(.*/)") .. ".."
+else
+    local SCRIPT_DIR = debug.getinfo(1, "S").source:sub(2):match("(.*/)")
+    PLUGIN_DIR = SCRIPT_DIR .. ".."
+end
 
 -- Environment variable management
 local env_vars = {}
@@ -13,29 +125,29 @@ local function setenv(name, value)
     env_vars[name] = value
 end
 
--- os.tmpname() on Windows returns a bare leaf like "\s5a2." rooted at the drive's
--- current dir, not an absolute path under TEMP. Normalize in two ordered steps:
--- (a) if the raw name is leading-backslash-rooted and TEMP is set, prepend %TEMP%
--- so the path is absolute and usable; (b) convert any remaining backslashes to
--- forward slashes so the path interpolates safely into single-quoted POSIX shell
--- commands (msys/git-bash) without backslash-escaping surprises. On Unix
--- os.tmpname() returns a "/"-rooted absolute path with no backslashes, so both
--- steps are no-ops.
+-- Compute a clean, unique POSIX temp directory. os.tmpname() returns native
+-- Windows names (e.g. \s5a2.) that are unusable as POSIX paths under msys2, so on
+-- Windows we derive a clean directory via `mktemp -d` run through the bash wrapper.
+-- On non-Windows we keep the os.tmpname() approach so macOS/Linux behavior is
+-- byte-for-byte identical. The returned path is removed (it is used as a base name
+-- onto which suffixes like ".zip" or "-home" are appended, mirroring the prior
+-- os.tmpname() usage).
 local function tmpname()
-    local name = os.tmpname()
-    if name:sub(1, 1) == "\\" and os.getenv("TEMP") then
-        name = os.getenv("TEMP") .. name
+    if IS_WINDOWS then
+        local dir = run_posix("mktemp -d", true)
+        return (dir or ""):gsub("%s+$", "")
     end
-    return name:gsub("\\", "/")
+    return os.tmpname()
 end
 
 -- Ambient variables that leak the developer's GLOBALLY-active mise/nim toolchain
 -- into the vfox sandbox and break hermeticity. mise's shell activation exports
--- these into every interactive shell (and thus into the busted process). In
--- particular an inherited NIMBLE_DIR is honored by hooks/env_keys.lua Priority 1
--- ("respect existing NIMBLE_DIR"), so without scrubbing, the activated vfox nim
--- would still report the developer's global NIMBLE_DIR (e.g. nim/2.2.10/nimble)
--- and nimble would compile against the global nim instead of the sandbox nim@2.2.4.
+-- these into every interactive shell (and thus into the busted process). The
+-- plugin no longer sets NIMBLE_DIR (it lets nim use the shared ~/.nimble), but a
+-- developer's inherited NIMBLE_DIR persists through activation unchanged, so
+-- without scrubbing the activated vfox nim would still report the developer's
+-- global NIMBLE_DIR (e.g. nim/2.2.10/nimble) and nimble would resolve packages
+-- against that global dir instead of the clean sandbox default.
 local SCRUBBED_ENV_VARS = {
     "NIMBLE_DIR",
     "MISE_SHELL",
@@ -78,7 +190,20 @@ local function build_env_prefix()
         table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
     end
 
-    table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+    -- PATH handling is OS-aware. On Windows (detected via package.config's path
+    -- separator) the test runs under msys2, where the hardcoded Unix SANITIZED_PATH
+    -- would wipe out /mingw64/bin (busted's lua5.1, coreutils), /usr/bin (msys
+    -- coreutils), and the inherited vfox.exe dir, breaking every vfox/nim/printf/
+    -- command -v call. The global-tool-scrub hermeticity rationale doesn't apply on
+    -- a clean CI runner, so we instead PREPEND the msys2 dirs to the INHERITED PATH
+    -- so busted's lua5.1, msys coreutils, and the inherited vfox.exe all resolve. On
+    -- non-Windows we keep the hardcoded SANITIZED_PATH unchanged to preserve
+    -- macOS/Linux hermeticity.
+    if IS_WINDOWS then
+        table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
+    else
+        table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+    end
 
     for name, value in pairs(env_vars) do
         table.insert(parts, string.format("export %s='%s';", name, value))
@@ -101,16 +226,12 @@ local function exec(cmd)
     -- Wrap the (possibly compound) command in a group so $? reflects its exit
     -- status before the trailing 2>&1 redirect is applied.
     local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
-    -- On Windows, io.popen runs through cmd.exe which cannot interpret the POSIX
-    -- shell builtins used above (unset/export/{ ...; }/printf). Re-wrap in `bash -c`
-    -- so msys/git-bash interprets the command. On Unix this branch is skipped, so
-    -- behavior is identical (the command already runs through /bin/sh).
-    if package.config:sub(1, 1) == "\\" then
-        full_cmd = "bash -c '" .. full_cmd:gsub("'", "'\\''") .. "'"
-    end
-    local handle = io.popen(full_cmd .. " 2>&1")
-    local result = handle:read("*a")
-    handle:close()
+    -- run_posix captures stdout+stderr. On Windows it writes full_cmd to a temp
+    -- script and runs `bash <script> 2>&1` (cmd.exe never sees the POSIX builtins
+    -- or nested quotes); on Unix it runs `io.popen(full_cmd .. " 2>&1")` directly.
+    -- The sentinel printf inside full_cmd carries the real exit status back in the
+    -- captured output, parsed below (LuaJIT close() can't report it reliably).
+    local result = run_posix(full_cmd, true)
 
     -- Recover the exit status from the sentinel, then strip it from the output.
     local code = result:match(EXIT_MARKER .. "(%d+)%s*$")
@@ -121,28 +242,44 @@ local function exec(cmd)
 end
 
 local function exec_status(cmd)
-    local full_cmd = build_env_prefix() .. cmd
-    local result, _, exit_code = os.execute(full_cmd .. " >/dev/null 2>&1")
-    -- Lua 5.1 returns exit code as number
-    -- Lua 5.2+ returns true/nil, "exit", code
-    if type(result) == "number" then
-        return result == 0
-    elseif type(result) == "boolean" then
-        return result
-    elseif exit_code then
-        return exit_code == 0
-    else
-        return false
-    end
+    -- Compose the POSIX prefix + command (output discarded). run_posix runs it via
+    -- os.execute and normalizes the Lua 5.1 (number) / 5.2+ (boolean) status into a
+    -- boolean. On Windows it goes through the temp-script mechanism so the builtins
+    -- (unset/export/command -v/test/etc.) are interpreted by bash, not cmd.exe.
+    local full_cmd = build_env_prefix() .. cmd .. " >/dev/null 2>&1"
+    local _, success = run_posix(full_cmd, false)
+    return success
 end
 
+-- On Windows the busted Lua is native MinGW Lua whose io.open resolves Windows
+-- paths, NOT the msys2 POSIX paths that `mktemp -d` returns (e.g. /tmp/tmp.XXX,
+-- which msys maps to D:\a\_temp\msys64\tmp\...). Files created under those temp
+-- dirs are therefore unreachable via native io.open, so existence/read checks must
+-- route through bash (where the POSIX path is valid). On Unix the POSIX path IS a
+-- native path, so we keep the direct io.open path for byte-for-byte parity.
 local function file_exists(path)
+    if IS_WINDOWS then
+        return exec_status("test -f '" .. path .. "'")
+    end
     local f = io.open(path, "r")
     if f then
         f:close()
         return true
     end
     return false
+end
+
+-- Write text to a file. On Windows, route through bash with printf so msys2 POSIX
+-- paths resolve; on Unix use native io.open unchanged.
+local function write_file(path, content)
+    if IS_WINDOWS then
+        -- printf %s avoids trailing-newline surprises; content is test-controlled.
+        raw_execute("printf '%s' '" .. content:gsub("'", "'\\''") .. "' > '" .. path .. "'")
+        return
+    end
+    local f = io.open(path, "w")
+    f:write(content)
+    f:close()
 end
 
 local function dir_exists(path)
@@ -152,22 +289,26 @@ end
 -- Run a shell command with nim@2.2.4 activated via a project-local .tool-versions
 -- file. This is vfox's reliable, hermetic activation path: inside a directory that
 -- declares `nim 2.2.4`, `eval "$(vfox activate bash)"` materializes a per-project
--- .vfox/sdks/nim symlink, prepends its bin to PATH, and exports NIMBLE_DIR. (Global
+-- .vfox/sdks/nim symlink and prepends its bin to PATH. (Global
 -- `vfox use -g` activation does NOT take effect in a non-interactive `bash -c`
 -- subshell — it needs a persistent shell hook session — so we never rely on it.)
 -- The `inner` string runs after activation, with cwd at the project dir.
 local function exec_with_nim(inner)
+    -- On Windows tmpname() yields an msys2 POSIX path (mktemp -d); os.remove is a
+    -- native call that cannot resolve it (harmless no-op) and mkdir -p is
+    -- idempotent, so the dir from mktemp -d is reused. On Unix os.tmpname() created
+    -- a file; os.remove clears it and mkdir -p recreates it as a dir, unchanged.
     local proj = tmpname()
     os.remove(proj)
-    exec("mkdir -p '" .. proj .. "'")
-    local f = io.open(proj .. "/.tool-versions", "w")
-    f:write("nim 2.2.4\n")
-    f:close()
+    raw_execute("mkdir -p '" .. proj .. "'")
+    -- write_file routes through bash on Windows (proj is an msys2 POSIX path native
+    -- Lua io.open cannot resolve); native io.open on Unix.
+    write_file(proj .. "/.tool-versions", "nim 2.2.4\n")
 
     local script = 'cd "' .. proj .. '" && eval "$(vfox activate bash)" && ' .. inner
     local output, success = exec("bash -c '" .. script:gsub("'", "'\\''") .. "'")
 
-    exec("rm -rf '" .. proj .. "'")
+    raw_execute("rm -rf '" .. proj .. "'")
     return output, success, proj
 end
 
@@ -192,12 +333,10 @@ end
 
 describe("vfox Plugin Integration Tests", function()
     -- Durable, collision-free archive path shared by setup (create) and teardown (remove).
-    -- mise-integration_spec.lua uses the same os.tmpname() pattern for its sandbox dir.
-    -- NOTE: on a Windows runtime os.tmpname() may return a backslash path; the create site
-    -- interpolates it into a single-quoted `git archive --output='...'` shell command under
-    -- `shell: 'msys2 {0}'`, where a backslashed path is fragile and may need backslash->forward-slash
-    -- normalization before interpolation. The integration tier is [CI-ONLY] on Windows (design
-    -- §3.3); this caveat is validated by the first Windows integration CI run, not locally.
+    -- tmpname() returns a clean POSIX base path on every platform: os.tmpname() on
+    -- Unix, and `mktemp -d` (via the bash wrapper) on Windows where native
+    -- os.tmpname() yields unusable backslash leaf names. The path interpolates
+    -- safely into single-quoted `git archive --output='...'` shell commands.
     local zip_path = tmpname() .. "-vfox-nim-test.zip"
 
     -- Sandbox vfox home so installs, plugins, and `vfox use -g` writes are fully
@@ -221,7 +360,7 @@ describe("vfox Plugin Integration Tests", function()
 
         -- Create and activate the sandbox vfox home BEFORE any vfox invocation so
         -- every command below is hermetic.
-        exec("mkdir -p '" .. VFOX_TEST_HOME .. "'")
+        raw_execute("mkdir -p '" .. VFOX_TEST_HOME .. "'")
         setenv("VFOX_HOME", VFOX_TEST_HOME)
         print("✓ Sandboxed vfox home: " .. VFOX_TEST_HOME)
 
@@ -255,12 +394,14 @@ describe("vfox Plugin Integration Tests", function()
         print("→ Removing plugin...")
         exec("vfox remove -y nim 2>/dev/null || true")
 
-        -- Remove the zip file if it exists (portable; removes exactly the file setup created)
-        os.remove(zip_path)
+        -- Remove the zip file if it exists. Route through bash `rm -f` so the msys2
+        -- POSIX zip_path resolves on Windows (native os.remove cannot); harmless on
+        -- Unix where the path is native.
+        raw_execute("rm -f '" .. zip_path .. "'")
 
         -- Remove the entire sandbox vfox home so nothing persists between runs.
         if VFOX_TEST_HOME ~= "" and dir_exists(VFOX_TEST_HOME) then
-            exec("rm -rf '" .. VFOX_TEST_HOME .. "'")
+            raw_execute("rm -rf '" .. VFOX_TEST_HOME .. "'")
         end
 
         print("✓ Plugin removed and sandbox home cleaned")
@@ -327,7 +468,15 @@ describe("vfox Plugin Integration Tests", function()
             -- activation, proving the sandbox toolchain (not a leaked global nim) is used.
             local output, success = exec_with_nim("command -v nim")
             assert.is_true(success, "command -v nim failed: " .. output)
-            local nim_path = output:gsub("%s+$", ""):match("[^\n]*$")
+            -- normalize_sep collapses Windows backslashes and strips trailing CR/
+            -- whitespace so the containment check is separator-agnostic (no-op on
+            -- Unix). Apply it to the FULL output first (stripping the trailing
+            -- newline) THEN take the last line, so a trailing "\n" does not yield an
+            -- empty last line. Match the sdk bin path WITHOUT a binary extension:
+            -- msys2 `command -v nim` reports the resolved path as `.../bin/nim`
+            -- even though the file is nim.exe, and `/bin/nim` is a substring of
+            -- both forms, so this works on Windows and Unix alike.
+            local nim_path = normalize_sep(output):match("[^\n]*$")
             assert.is_truthy(
                 nim_path:find("/.vfox/sdks/nim/bin/nim", 1, true),
                 "nim not resolved from the activated vfox sdk: " .. nim_path
@@ -344,26 +493,25 @@ describe("vfox Plugin Integration Tests", function()
     end)
 
     describe("Environment Variables", function()
-        it("should set NIMBLE_DIR to the activated per-project nimble directory", function()
-            local nimble_dir, success, proj = exec_with_nim('echo "NIMBLE_DIR=$NIMBLE_DIR"')
-            assert.is_true(success, "activation failed: " .. nimble_dir)
-            nimble_dir = nimble_dir:gsub("%s+$", ""):match("NIMBLE_DIR=([^\n]*)")
-            assert.is_truthy(nimble_dir and nimble_dir ~= "", "NIMBLE_DIR was not set by activation")
-
-            -- env_keys.lua sets NIMBLE_DIR = <sdk>/nimble. `vfox activate` materializes a
-            -- project-local .vfox/sdks/nim symlink rooted at the activated project dir
-            -- (`proj`), so NIMBLE_DIR must live inside that per-project tmp dir. Pinning to
-            -- `proj` (mirroring the mise spec's MISE_TEST_DIR pin) ensures a stale real
-            -- ~/.vfox path or the developer's global NIMBLE_DIR cannot satisfy the suffix
-            -- check below.
-            assert.is_truthy(
-                nimble_dir:find(proj, 1, true),
-                "NIMBLE_DIR must be inside the activated project dir (" .. proj .. "): got " .. nimble_dir
-            )
-            assert.is_truthy(
-                nimble_dir:find("/.vfox/sdks/nim/nimble", 1, true),
-                "NIMBLE_DIR is not the activated vfox sdk nimble dir: " .. nimble_dir
-            )
+        it("does not inject NIMBLE_DIR on activation (nim uses the shared ~/.nimble)", function()
+            -- The plugin intentionally no longer sets NIMBLE_DIR (it previously set a
+            -- per-version <sdk>/nimble path inherited from asdf-nim, which polluted the
+            -- managed install dir and lost packages on reinstall). Leaving it unset means
+            -- nim uses the shared ~/.nimble, a user-set NIMBLE_DIR persists, and
+            -- project-local nimbledeps auto-detection still works.
+            --
+            -- The harness scrubs the developer's ambient NIMBLE_DIR for every command,
+            -- so under `vfox activate` the ONLY thing that could set $NIMBLE_DIR is the
+            -- plugin's env_keys. Assert it stays empty.
+            local nimble_dir_raw, success = exec_with_nim('echo "NIMBLE_DIR=[$NIMBLE_DIR]"')
+            assert.is_true(success, "activation failed: " .. tostring(nimble_dir_raw))
+            -- On Windows the captured value may be nil or carry a trailing CR while the
+            -- plugin correctly injects nothing. Extract the bracketed value, then
+            -- normalize (collapse separators, strip CR/whitespace): nil or
+            -- empty-after-trim both mean "no NIMBLE_DIR injected" and PASS; a non-empty
+            -- trimmed path still FAILS (real assertion, not a green mirage).
+            local nimble_dir = normalize_sep((nimble_dir_raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
+            assert.are.equal("", nimble_dir, "plugin must not inject NIMBLE_DIR on activation; got: " .. nimble_dir)
         end)
     end)
 
@@ -374,15 +522,16 @@ describe("vfox Plugin Integration Tests", function()
             -- .tool-versions recognition rather than merely that the file was written.
             local test_dir = tmpname()
             os.remove(test_dir)
-            exec("mkdir -p '" .. test_dir .. "'")
-            local f = io.open(test_dir .. "/.tool-versions", "w")
-            f:write("nim 2.2.4\n")
-            f:close()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
+            -- write_file routes through bash on Windows (test_dir is an msys2 POSIX
+            -- path from mktemp -d that native Lua io.open cannot resolve); native
+            -- io.open on Unix.
+            write_file(test_dir .. "/.tool-versions", "nim 2.2.4\n")
 
             local output, success =
                 exec("bash -c 'cd \"" .. test_dir .. '" && eval "$(vfox activate bash)" && vfox current nim\'')
 
-            exec("rm -rf '" .. test_dir .. "'")
+            raw_execute("rm -rf '" .. test_dir .. "'")
 
             assert.is_true(success, "vfox current nim failed in .tool-versions dir: " .. output)
             assert.matches("2%.2%.4", output, "vfox did not report nim 2.2.4 as current for the .tool-versions dir")
@@ -390,11 +539,12 @@ describe("vfox Plugin Integration Tests", function()
     end)
 
     describe("Nimble Package Manager", function()
-        it("should install a nimble package into the activated sdk", function()
+        it("should install a nimble package using the activated toolchain", function()
             -- Install argparse, then deterministically verify it is present via
             -- `nimble list --installed` (exit-code + name check) rather than scraping
             -- the non-deterministic install banner. Both run under the same activated
-            -- toolchain so NIMBLE_DIR points at the per-project vfox sdk.
+            -- nim@2.2.4 toolchain; the plugin does not inject NIMBLE_DIR, so nimble
+            -- resolves its default (shared ~/.nimble) dir.
             local inner = "nimble install -y argparse 2>&1 && nimble list --installed 2>&1"
             local output, success = exec_with_nim(inner)
 
@@ -436,6 +586,14 @@ describe("vfox Plugin Integration Tests", function()
         end)
 
         it("should install with VFOX_NIM_INSTALL_METHOD='source'", function()
+            -- Source compilation is not supported on Windows: Windows users get official
+            -- prebuilt binaries, and `auto` correctly selects the binary path. Forcing a
+            -- source build would compile Nim from C sources via MinGW/koch, which is out of
+            -- scope. Mark pending so it shows as skipped (not passed) on Windows.
+            if IS_WINDOWS then
+                pending("source build not supported on Windows; binary is the supported install path")
+                return
+            end
             -- Note: This test can be very slow as it builds from source
             exec("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 

@@ -54,7 +54,11 @@ describe("install logic (Tier II)", function()
         tmp_name = tmp_name:gsub("\\", "/")
         os.remove(tmp_name)
         tmp_home = tmp_name .. "-vfox-nim-home"
-        os.execute("mkdir -p '" .. tmp_home .. "/.cache/vfox-nim'")
+        if M.is_windows() then
+            os.execute('mkdir "' .. tmp_home:gsub("/", "\\") .. '\\.cache\\vfox-nim"')
+        else
+            os.execute("mkdir -p '" .. tmp_home .. "/.cache/vfox-nim'")
+        end
         os.getenv = function(n)
             if n == "HOME" then
                 return tmp_home
@@ -79,7 +83,11 @@ describe("install logic (Tier II)", function()
         os.getenv = orig_getenv
         assert.is_truthy(orig_home) -- sanity: original HOME captured
         if tmp_home then
-            os.execute("rm -rf '" .. tmp_home .. "'")
+            if M.is_windows() then
+                os.execute('rmdir /s /q "' .. tmp_home:gsub("/", "\\") .. '"')
+            else
+                os.execute("rm -rf '" .. tmp_home .. "'")
+            end
         end
     end)
 
@@ -241,7 +249,16 @@ describe("OS detection (is_macos/is_windows)", function()
                 end,
             }
         end
-        assert.equals(true, utils.is_macos())
+        if package.config:sub(1, 1) == "\\" then
+            -- On a real Windows host, is_windows()'s package.config path-separator
+            -- check correctly wins over the stubbed uname (you cannot fake a macOS
+            -- host out from under package.config), so the macOS uname-fallback is
+            -- unreachable and is_macos() is correctly false. The Darwin uname path is
+            -- exercised on non-Windows hosts (the else branch).
+            assert.equals(false, utils.is_macos())
+        else
+            assert.equals(true, utils.is_macos())
+        end
     end)
 end)
 

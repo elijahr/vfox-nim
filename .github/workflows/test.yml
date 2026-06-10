@@ -78,9 +78,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
-    # TODO(windows): deferred this session — re-enable as blocking once a green Windows CI run is confirmed (design §1.4)
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
-
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
@@ -97,7 +94,12 @@ jobs:
       - name: Run Lua unit tests (Windows)
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
-        run: busted spec/ -v
+        # cd into the workspace (the msys2 shell starts in the MSYS2 home), and pass
+        # `spec` WITHOUT a trailing slash: on Windows lfs.attributes("spec/") returns
+        # nil, so busted's file discovery fails on the trailing-slash form.
+        run: |
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          busted spec -v
 
   # Test mise integration (with integration test script)
   mise_integration_test:
@@ -109,9 +111,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
-    # TODO(windows): deferred this session — re-enable as blocking once a green Windows CI run is confirmed (design §1.4)
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
-
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v5
@@ -122,6 +121,8 @@ jobs:
 
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
+        with:
+          install: false
 
       - name: Run mise integration tests (Unix)
         if: runner.os != 'Windows'
@@ -134,7 +135,15 @@ jobs:
       - name: Run mise integration tests (Windows)
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
-        run: mise exec -- busted test/mise-integration_spec.lua -v
+        # Run busted DIRECTLY (not via `mise exec`): `mise exec` activates the
+        # project env, which makes mise try to install .tool-versions' `lua 5.1`
+        # from source (vfox-lua `make` fails on Windows). busted is already on the
+        # msys2 PATH (setup-lua), and the spec drives mise itself via the inherited
+        # PATH (path-type: inherit). cd into the workspace first (msys2 starts in
+        # the MSYS2 home).
+        run: |
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          busted test/mise-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_YES: 1
@@ -148,9 +157,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-
-    # TODO(windows): deferred this session — re-enable as blocking once a green Windows CI run is confirmed (design §1.4)
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
 
     steps:
       - name: Checkout plugin
@@ -179,7 +185,10 @@ jobs:
             brew install vfox
           fi
 
+      # On Windows this would source-build .tool-versions' lua 5.1 (fails); the
+      # integration spec installs nim itself, so the global tools aren't needed.
       - name: Install vfox tools
+        if: runner.os != 'Windows'
         run: |
           vfox install --all --yes
 
@@ -193,6 +202,8 @@ jobs:
       - name: Run vfox integration tests (Windows)
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
-        run: busted test/vfox-integration_spec.lua -v
+        run: |
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          busted test/vfox-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

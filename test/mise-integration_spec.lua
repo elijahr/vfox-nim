@@ -3,7 +3,143 @@
 -- Run with: busted test/mise-integration_spec.lua
 
 -- Test environment setup
-local MISE_TEST_DIR = os.tmpname():gsub("%.%w+$", "") .. ".mise-nim-test"
+local IS_WINDOWS = package.config:sub(1, 1) == "\\"
+
+-- Executable extension appended to bare tool names. On Windows the installed Nim
+-- compiler is `nim.exe`; on Unix it is `nim`. The plugin already handles this
+-- internally (post_install.lua uses nim_ext); the integration spec must mirror it
+-- when asserting on-disk binary paths.
+local BIN_EXT = IS_WINDOWS and ".exe" or ""
+
+-- Normalize a path for COMPARISON only. Two Windows-specific normalizations:
+--   1. `\`->`/`: mise composes its install path with native backslashes
+--      (...\installs\nim\2.2.4) while the plugin's env_keys appends forward-slash
+--      segments (.../bin, .../nimble), yielding mixed separators. Both forms are
+--      valid for nim/nimble under msys2/mingw (real usage works), so equality must
+--      collapse separators rather than treat the difference as a failure.
+--   2. strip trailing CR/whitespace: msys2 command output (mise where, echo) can
+--      carry a trailing `\r` that the busted diff renders invisibly, making two
+--      "identical-looking" strings compare unequal. Strip it before comparing.
+-- No-op on Unix (no backslashes, no CR).
+local function normalize_sep(path)
+    return (path or ""):gsub("\\", "/"):gsub("[\r%s]+$", "")
+end
+
+-- On Windows the busted Lua is NATIVE MinGW Lua, so io.popen/os.execute spawn
+-- cmd.exe (NOT bash). The previous `bash -c '<posix>'` inline approach FAILED:
+-- cmd.exe parses the string first and mangles the nested quotes ("unexpected EOF").
+--
+-- The robust approach used here is a temp-script file: the full POSIX command
+-- string is written verbatim to a unique, cwd-relative script (e.g.
+-- ./.vfox-spawn-<n>.sh) and spawned via `bash <script>`. cmd.exe then sees only
+-- `bash .vfox-spawn-N.sh` -- no nested quoting to mangle. The script is written in
+-- binary mode with bare "\n" line endings (no "\r") so bash doesn't choke, and is
+-- always removed afterward (os.remove). A cwd-relative name avoids all
+-- Windows<->POSIX path translation: native-Windows Lua's cwd is the workspace and
+-- the bash spawned by cmd.exe inherits it, so the same relative path resolves
+-- identically for the Lua writer and the bash reader.
+--
+-- On non-Windows the EXACT prior direct-execution path is preserved (no temp file):
+-- the command already runs through /bin/sh, so macOS/Linux behavior is unchanged.
+
+-- Module-level counter guaranteeing unique temp-script names across spawns.
+local spawn_counter = 0
+
+-- Shared Windows-only temp-script runner. `cmd` is the fully-composed POSIX
+-- command string (build_env_prefix() + caller command + any sentinel/redirects),
+-- UNCHANGED in content. `want_output` selects capture mode:
+--   want_output=true  -> returns (captured_stdout_stderr, success)
+--   want_output=false -> returns ("", success) where success is the exit status
+-- On Windows the command is run via a temp script; on non-Windows it runs directly.
+local function run_posix(cmd, want_output)
+    if IS_WINDOWS then
+        spawn_counter = spawn_counter + 1
+        local script_relpath = "./.vfox-spawn-" .. os.time() .. "-" .. spawn_counter .. ".sh"
+        -- Binary mode + bare "\n" endings so bash never sees a stray "\r".
+        local script = io.open(script_relpath, "wb")
+        script:write("#!/usr/bin/env bash\n")
+        script:write(cmd)
+        script:write("\n")
+        script:close()
+
+        local output, success
+        if want_output then
+            local handle = io.popen("bash " .. script_relpath .. " 2>&1")
+            output = handle:read("*a")
+            -- LuaJIT close() returns only `true`; callers that need real exit
+            -- status (exec) parse the sentinel from `output` instead.
+            success = handle:close() and true or false
+        else
+            local result, _, exit_code = os.execute("bash " .. script_relpath)
+            output = ""
+            if type(result) == "number" then
+                success = result == 0
+            elseif type(result) == "boolean" then
+                success = result
+            elseif exit_code then
+                success = exit_code == 0
+            else
+                success = false
+            end
+        end
+
+        os.remove(script_relpath)
+        return output, success
+    end
+
+    -- Non-Windows: direct execution, byte-for-byte the prior behavior.
+    if want_output then
+        local handle = io.popen(cmd .. " 2>&1")
+        local output = handle:read("*a")
+        local success = handle:close() and true or false
+        return output, success
+    end
+
+    local result, _, exit_code = os.execute(cmd)
+    if type(result) == "number" then
+        return "", result == 0
+    elseif type(result) == "boolean" then
+        return "", result
+    elseif exit_code then
+        return "", exit_code == 0
+    end
+    return "", false
+end
+
+-- Run a POSIX command, ignoring its result. On Windows it routes through the
+-- temp-script mechanism; on non-Windows it runs directly via os.execute.
+local function raw_execute(cmd)
+    run_posix(cmd, false)
+end
+
+-- Compute the base temp directory for the sandbox. os.tmpname() returns native
+-- Windows names (e.g. \s7uk.) that are unusable as POSIX paths / MISE_DATA_DIR,
+-- so on Windows we derive a clean, unique POSIX directory via `mktemp -d` run
+-- through the bash wrapper. On non-Windows we keep the existing os.tmpname()
+-- approach so macOS/Linux behavior is byte-for-byte identical.
+local function make_test_base_dir()
+    if IS_WINDOWS then
+        local dir = run_posix("mktemp -d", true)
+        dir = (dir or ""):gsub("%s+$", "")
+        return dir .. "/mise-nim-test"
+    end
+    return os.tmpname():gsub("%.%w+$", "") .. ".mise-nim-test"
+end
+
+-- Create a unique per-test temp directory and return its POSIX path. On Windows
+-- this uses `mktemp -d` (os.tmpname() yields unusable native paths); on Unix it
+-- preserves the os.tmpname()-based approach.
+local function make_temp_dir()
+    if IS_WINDOWS then
+        local dir = run_posix("mktemp -d", true)
+        return (dir or ""):gsub("%s+$", "")
+    end
+    local dir = os.tmpname()
+    os.remove(dir)
+    return dir
+end
+
+local MISE_TEST_DIR = make_test_base_dir()
 local SCRIPT_DIR = debug.getinfo(1, "S").source:sub(2):match("(.*/)")
 local PLUGIN_DIR = SCRIPT_DIR .. ".."
 
@@ -64,7 +200,20 @@ local function build_env_prefix()
         table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
     end
 
-    table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+    -- PATH handling is OS-aware. On Windows (detected the same way exec() does,
+    -- via package.config's path separator) the test runs under msys2, where the
+    -- hardcoded Unix SANITIZED_PATH would wipe out /mingw64/bin (busted's lua5.1,
+    -- coreutils), /usr/bin (msys coreutils), and the inherited mise.exe dir,
+    -- breaking every mise/nim/awk/printf/command -v call. The global-tool-scrub
+    -- hermeticity rationale doesn't apply on a clean CI runner, so we instead
+    -- PREPEND the msys2 dirs to the INHERITED PATH so busted's lua5.1, msys
+    -- coreutils, and the inherited mise.exe all resolve. On non-Windows we keep
+    -- the hardcoded SANITIZED_PATH unchanged to preserve macOS/Linux hermeticity.
+    if IS_WINDOWS then
+        table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
+    else
+        table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+    end
 
     for name, value in pairs(env_vars) do
         table.insert(parts, string.format("export %s='%s';", name, value))
@@ -87,16 +236,12 @@ local function exec(cmd)
     -- Wrap the (possibly compound) command in a group so $? reflects its exit
     -- status before the trailing 2>&1 redirect is applied.
     local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
-    -- On Windows, io.popen runs through cmd.exe which cannot interpret the POSIX
-    -- shell builtins used above (unset/export/{ ...; }/printf). Re-wrap in `bash -c`
-    -- so msys/git-bash interprets the command. On Unix this branch is skipped, so
-    -- behavior is identical (the command already runs through /bin/sh).
-    if package.config:sub(1, 1) == "\\" then
-        full_cmd = "bash -c '" .. full_cmd:gsub("'", "'\\''") .. "'"
-    end
-    local handle = io.popen(full_cmd .. " 2>&1")
-    local result = handle:read("*a")
-    handle:close()
+    -- run_posix captures stdout+stderr. On Windows it writes full_cmd to a temp
+    -- script and runs `bash <script> 2>&1` (cmd.exe never sees the POSIX builtins
+    -- or nested quotes); on Unix it runs `io.popen(full_cmd .. " 2>&1")` directly.
+    -- The sentinel printf inside full_cmd carries the real exit status back in the
+    -- captured output, parsed below (LuaJIT close() can't report it reliably).
+    local result = run_posix(full_cmd, true)
 
     -- Recover the exit status from the sentinel, then strip it from the output.
     local code = result:match(EXIT_MARKER .. "(%d+)%s*$")
@@ -109,28 +254,64 @@ local function exec(cmd)
 end
 
 local function exec_status(cmd)
-    local full_cmd = build_env_prefix() .. cmd
-    local result, _, exit_code = os.execute(full_cmd .. " >/dev/null 2>&1")
-    -- Lua 5.1 returns exit code as number
-    -- Lua 5.2+ returns true/nil, "exit", code
-    if type(result) == "number" then
-        return result == 0
-    elseif type(result) == "boolean" then
-        return result
-    elseif exit_code then
-        return exit_code == 0
-    else
-        return false
-    end
+    -- Compose the POSIX prefix + command (output discarded). run_posix runs it via
+    -- os.execute and normalizes the Lua 5.1 (number) / 5.2+ (boolean) status into a
+    -- boolean. On Windows it goes through the temp-script mechanism so the builtins
+    -- (unset/export/command -v/test/etc.) are interpreted by bash, not cmd.exe.
+    local full_cmd = build_env_prefix() .. cmd .. " >/dev/null 2>&1"
+    local _, success = run_posix(full_cmd, false)
+    return success
 end
 
+-- On Windows the busted Lua is native MinGW Lua whose io.open resolves Windows
+-- paths, NOT the msys2 POSIX paths that `mktemp -d` returns (e.g. /tmp/tmp.XXX,
+-- which msys maps to D:\a\_temp\msys64\tmp\...). Files created under those temp
+-- dirs are therefore unreachable via native io.open, so existence/read checks must
+-- route through bash (where the POSIX path is valid). On Unix the POSIX path IS a
+-- native path, so we keep the direct io.open path for byte-for-byte parity.
 local function file_exists(path)
+    if IS_WINDOWS then
+        return exec_status("test -f '" .. path .. "'")
+    end
     local f = io.open(path, "r")
     if f then
         f:close()
         return true
     end
     return false
+end
+
+-- Read a file's full contents. On Windows, route through bash `cat` so msys2
+-- POSIX paths (from mktemp -d) resolve; on Unix use native io.open unchanged.
+-- Returns the contents string, or nil if the file does not exist / is unreadable.
+local function read_file(path)
+    if IS_WINDOWS then
+        if not file_exists(path) then
+            return nil
+        end
+        local content = exec("cat '" .. path .. "'")
+        return content
+    end
+    local f = io.open(path, "r")
+    if not f then
+        return nil
+    end
+    local content = f:read("*a")
+    f:close()
+    return content
+end
+
+-- Write text to a file. On Windows, route through bash with a heredoc so msys2
+-- POSIX paths resolve; on Unix use native io.open unchanged.
+local function write_file(path, content)
+    if IS_WINDOWS then
+        -- printf %s avoids trailing-newline surprises; content is test-controlled.
+        raw_execute("printf '%s' '" .. content:gsub("'", "'\\''") .. "' > '" .. path .. "'")
+        return
+    end
+    local f = io.open(path, "w")
+    f:write(content)
+    f:close()
 end
 
 local function dir_exists(path)
@@ -166,7 +347,7 @@ describe("Mise Plugin Integration Tests", function()
         print("========================================\n")
 
         -- Create sandboxed mise directories
-        os.execute(
+        raw_execute(
             "mkdir -p '" .. MISE_TEST_DIR .. "/data' '" .. MISE_TEST_DIR .. "/cache' '" .. MISE_TEST_DIR .. "/config'"
         )
 
@@ -217,7 +398,7 @@ describe("Mise Plugin Integration Tests", function()
 
         if MISE_TEST_DIR ~= "" and dir_exists(MISE_TEST_DIR) then
             print("→ Cleaning up temporary directory...")
-            os.execute("rm -rf '" .. MISE_TEST_DIR .. "'")
+            raw_execute("rm -rf '" .. MISE_TEST_DIR .. "'")
             print("✓ Temporary directory removed")
         end
     end)
@@ -268,8 +449,23 @@ describe("Mise Plugin Integration Tests", function()
                 "mise where nim@2.2.4 failed after installation"
             )
 
-            local nim_path = exec("mise where nim@2.2.4"):gsub("%s+$", "")
-            assert.is_true(file_exists(nim_path .. "/bin/nim"), "nim binary not found at " .. nim_path .. "/bin/nim")
+            -- Verify the nim binary is present WITHOUT round-tripping `mise where`'s
+            -- native Windows path through Lua. The prior approach captured `mise where`
+            -- (a native `D:\...\installs\nim\2.2.4` path on Windows), normalized its
+            -- separators to `D:/...`, then ran `test -f` on it under bash -- but bash's
+            -- `test -f` cannot resolve a `D:/...` drive-letter path (it is not an msys2
+            -- POSIX path), so the check failed spuriously even though the install is
+            -- fine (the very next `mise exec ... nim --version` succeeds).
+            --
+            -- Instead, expand `mise where` INSIDE the same bash invocation so the path
+            -- never leaves the POSIX world (no native<->POSIX round-trip), and assert
+            -- the binary exists there. This stays a real presence assertion: it FAILS
+            -- if bin/nim<ext> is missing. BIN_EXT mirrors the plugin's post_install
+            -- nim_ext (`.exe` on Windows, empty on Unix). No-op difference on Unix.
+            assert.is_true(
+                exec_status('test -f "$(mise where nim@2.2.4)/bin/nim' .. BIN_EXT .. '"'),
+                "nim binary not found under $(mise where nim@2.2.4)/bin/nim" .. BIN_EXT
+            )
         end)
     end)
 
@@ -307,16 +503,16 @@ describe("Mise Plugin Integration Tests", function()
         end)
 
         it("should compile and run a simple Nim program", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
 
-            local f = io.open(test_dir .. "/hello.nim", "w")
-            f:write('echo "Hello from Nim!"\n')
-            f:close()
+            -- write_file routes through bash on Windows, where test_dir is an msys2
+            -- POSIX path (mktemp -d) that native Lua io.open cannot resolve; on Unix
+            -- it is a native io.open write, unchanged.
+            write_file(test_dir .. "/hello.nim", 'echo "Hello from Nim!"\n')
 
             local output, success = exec("cd '" .. test_dir .. "' && mise exec nim@2.2.4 -- nim c -r hello.nim 2>&1")
-            os.execute("rm -rf '" .. test_dir .. "'")
+            raw_execute("rm -rf '" .. test_dir .. "'")
 
             assert.is_true(success, "Failed to compile simple Nim program")
             assert.matches("Hello from Nim!", output)
@@ -324,71 +520,103 @@ describe("Mise Plugin Integration Tests", function()
     end)
 
     describe("Environment Variables", function()
-        it("should set NIMBLE_DIR to the per-version sandbox directory", function()
-            local nimble_dir = exec("mise exec nim@2.2.4 -- sh -c 'echo $NIMBLE_DIR' 2>&1"):gsub("%s+$", "")
-            nimble_dir = nimble_dir:match("[^\n]*$")
+        it("does not inject NIMBLE_DIR (nim uses the shared ~/.nimble, like choosenim)", function()
+            -- The plugin intentionally no longer sets NIMBLE_DIR (it previously set a
+            -- per-version <install>/nimble path inherited from asdf-nim, which polluted
+            -- the managed install dir and lost packages on reinstall). Leaving it unset
+            -- means nim uses the shared ~/.nimble, a user-set NIMBLE_DIR persists, and
+            -- project-local nimbledeps auto-detection still works.
+            --
+            -- The harness scrubs the developer's ambient NIMBLE_DIR for every command,
+            -- so the ONLY way $NIMBLE_DIR could be non-empty under `mise exec nim@2.2.4`
+            -- is if the plugin's env_keys injected it. Assert it is empty.
+            -- Emit a BRACKETED sentinel (`NIMBLE_DIR=[$NIMBLE_DIR]`) and extract only
+            -- the value INSIDE the brackets. This is robust against interleaved
+            -- mise INFO/DEBUG log lines and stray interior CRs that survived the prior
+            -- last-line + normalize_sep approach: under MISE_DEBUG the captured output
+            -- can carry a log line (or an invisible byte) that made an "empty-looking"
+            -- value compare unequal to "". By anchoring on `[...]` we read exactly the
+            -- variable's value regardless of surrounding log noise. We then strip ALL
+            -- control/whitespace chars (%c and %s) from the captured value so an
+            -- invisible CR/space cannot defeat the equality check.
+            --
+            -- This stays a REAL assertion: if the plugin wrongly injected a non-empty
+            -- NIMBLE_DIR, the bracket content would be that path and the assert FAILS.
+            local nimble_dir_raw = exec("mise exec nim@2.2.4 -- sh -c 'echo \"NIMBLE_DIR=[$NIMBLE_DIR]\"' 2>&1")
+            local nimble_dir = ((nimble_dir_raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
+                :gsub("%c", "")
+                :gsub("%s", "")
+            assert.are.equal("", nimble_dir, "plugin must not inject NIMBLE_DIR; got: " .. nimble_dir)
 
-            -- env_keys.lua Priority 3 sets NIMBLE_DIR = <install>/nimble for the active
-            -- version. With the ambient developer NIMBLE_DIR scrubbed by the harness, this
-            -- must resolve to the sandbox-installed nim@2.2.4, isolating packages per
-            -- version. Assert the FULL expected path so a regression to the global nim or
-            -- a wrong version is caught.
+            -- Defensive corollary: with no NIMBLE_DIR injected, nimble's default dir
+            -- is the shared <HOME>/.nimble, which must live OUTSIDE the per-version
+            -- sandbox install dir (the directory the old plugin used to pin). Resolve
+            -- HOME and the install dir and assert they do not nest.
+            local home = exec("mise exec nim@2.2.4 -- sh -c 'echo $HOME' 2>&1"):gsub("%s+$", "")
+            home = home:match("[^\n]*$")
+            assert.is_truthy(home and home ~= "", "could not resolve HOME for default nimble dir check")
             local nim_path = exec("mise where nim@2.2.4 2>&1"):gsub("%s+$", "")
             nim_path = nim_path:match("[^\n]*$")
-            local expected = nim_path .. "/nimble"
-
-            assert.are.equal(expected, nimble_dir, "NIMBLE_DIR should be the sandbox per-version nimble dir")
-            -- Defensive: the resolved nim install itself must live inside the sandbox.
-            assert.is_truthy(
-                nim_path:find(MISE_TEST_DIR, 1, true),
-                "nim install not inside sandbox (" .. MISE_TEST_DIR .. "): " .. nim_path
+            assert.is_falsy(
+                normalize_sep(home):find(normalize_sep(nim_path), 1, true),
+                "HOME unexpectedly inside the per-version install dir: " .. home
             )
         end)
     end)
 
     describe("Configuration Files", function()
         it("should support mise use command", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
 
             exec("cd '" .. test_dir .. "' && mise use nim@2.2.4 2>&1")
 
+            -- read_file routes through bash on Windows (test_dir is an msys2 POSIX
+            -- path from mktemp -d that native Lua io.open cannot resolve) and uses
+            -- native io.open on Unix. `mise use` (not the plugin) writes the config;
+            -- the prior native io.open silently failed to read the real file on
+            -- Windows, masking a config mise had actually created.
             local has_config = false
-            if file_exists(test_dir .. "/mise.toml") then
-                local f = io.open(test_dir .. "/mise.toml", "r")
-                local content = f:read("*a")
-                f:close()
-                has_config = (content:match("nim") ~= nil)
-                    and (content:match("2%.2%.4") ~= nil or content:match('"2.2.4"') ~= nil)
-            elseif file_exists(test_dir .. "/.tool-versions") then
-                local f = io.open(test_dir .. "/.tool-versions", "r")
-                local content = f:read("*a")
-                f:close()
-                has_config = (content:match("nim") ~= nil) and (content:match("2%.2%.4") ~= nil)
+            local mise_toml = read_file(test_dir .. "/mise.toml")
+            local tool_versions = read_file(test_dir .. "/.tool-versions")
+            if mise_toml then
+                has_config = (mise_toml:match("nim") ~= nil)
+                    and (mise_toml:match("2%.2%.4") ~= nil or mise_toml:match('"2.2.4"') ~= nil)
+            elseif tool_versions then
+                has_config = (tool_versions:match("nim") ~= nil) and (tool_versions:match("2%.2%.4") ~= nil)
             end
 
-            os.execute("rm -rf '" .. test_dir .. "'")
+            raw_execute("rm -rf '" .. test_dir .. "'")
             assert.is_true(has_config, "Neither mise.toml nor .tool-versions created with correct content")
         end)
     end)
 
     describe("Nimble Package Manager", function()
-        it("should install a nimble package", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+        it("should install a nimble package into the default (shared) nimble dir", function()
+            -- Functional proof of the NIMBLE_DIR-unset behavior: with no plugin-injected
+            -- NIMBLE_DIR, the package installs into the default (shared) ~/.nimble and is
+            -- then resolvable there. Verify presence deterministically via
+            -- `nimble list --installed` (exit-code + name check) instead of scraping the
+            -- install banner: when the package is already present in the shared
+            -- ~/.nimble, `nimble install` prints nothing, so a banner-scrape would be a
+            -- false negative. The old per-version NIMBLE_DIR masked this by always
+            -- starting from an empty per-version dir.
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
 
-            local output, success =
-                exec("cd '" .. test_dir .. "' && echo 'y' | mise exec nim@2.2.4 -- nimble install -y argparse 2>&1")
-            os.execute("rm -rf '" .. test_dir .. "'")
+            local output, success = exec(
+                "cd '"
+                    .. test_dir
+                    .. "' && mise exec nim@2.2.4 -- nimble install -y argparse 2>&1 && "
+                    .. "mise exec nim@2.2.4 -- nimble list --installed 2>&1"
+            )
+            raw_execute("rm -rf '" .. test_dir .. "'")
 
-            assert.is_true(success, "nimble install failed: " .. output)
-            local lower_output = output:lower()
-            local has_success_msg = (lower_output:match("success") ~= nil)
-                or (lower_output:match("installed") ~= nil)
-                or (lower_output:match("already") ~= nil)
-            assert.is_true(has_success_msg, "nimble install didn't show expected success message. Output: " .. output)
+            assert.is_true(success, "nimble install/list failed: " .. output)
+            assert.is_truthy(
+                output:lower():find("argparse", 1, true),
+                "argparse not reported as installed in the default nimble dir. Output: " .. output
+            )
         end)
     end)
 

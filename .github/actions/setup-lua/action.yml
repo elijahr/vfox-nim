@@ -2,7 +2,8 @@
 name: Setup Lua (Lua 5.1 + luarocks + busted/luacheck)
 description: >-
   dlopen-capable Lua 5.1 toolchain. Linux/macOS via hererocks (PUC Lua 5.1);
-  Windows via MSYS2-native LuaJIT + luarocks. Replaces the broken static-lua +
+  Windows via MSYS2-native PUC Lua 5.1 + luarocks. All three platforms converge
+  on PUC Lua 5.1 for gopher-lua fidelity. Replaces the broken static-lua +
   withLuaPath approach.
 runs:
   using: composite
@@ -74,22 +75,38 @@ runs:
         lua -v
         busted --version
 
-    # ---- Windows branch (PRIMARY): MSYS2-native LuaJIT + luarocks + busted ----
-    # NOTE: this leg installs luarocks under MSYS2 LuaJIT, so it MAY hit the same
-    # LuaJIT "main function has more than 65536 constants" manifest-loader wall
-    # described in the Unix rationale above (luarocks/luarocks#1797 is a LuaJIT-wide
-    # limit, not Unix-specific). That is precisely why this Windows leg is
-    # continue-on-error and ships with the named MSVC + hererocks(PUC Lua) FALLBACK
-    # block below. If the first real Windows CI run trips the constant limit, swap to
-    # the fallback (which provisions a PUC-Lua-based interpreter and is immune).
+    # ---- Windows branch (PRIMARY): MSYS2-native PUC Lua 5.1 + luarocks + busted ----
+    # Windows now matches the Linux/macOS choice: PUC Lua 5.1 (NOT LuaJIT). Rationale:
+    #   1. Tests target Lua 5.1 for gopher-lua fidelity (vfox/mise embed gopher-lua,
+    #      a 5.1 implementation). PUC Lua 5.1 is the closest semantic match.
+    #   2. LuaJIT is avoided here for the SAME reason as Unix: `luarocks install`
+    #      under LuaJIT fails loading the large luarocks.org manifest with "main
+    #      function has more than 65536 constants" (luarocks/luarocks#1797, a
+    #      LuaJIT-wide bytecode-loader limit). PUC Lua 5.1 loads the manifest as
+    #      source and is immune.
+    #
+    # Package detail: there is no `mingw-w64-x86_64-lua51-luarocks` package. The
+    # generic `mingw-w64-x86_64-lua-luarocks` (luarocks 3.13) depends on the
+    # unversioned `mingw-w64-x86_64-lua` (currently Lua 5.5) and, left to its own
+    # devices, binds to 5.5 and installs busted into the rocks-5.5 tree (bare
+    # `busted` then isn't on PATH -> exit 127, and would run under 5.5). We instead
+    # install `mingw-w64-x86_64-lua51` (PUC Lua 5.1.5; binary `lua5.1.exe`, headers
+    # under /mingw64/include/lua5.1/) alongside lua-luarocks, and point every
+    # luarocks call at the 5.1 tree via `--lua-version 5.1 --lua-dir /mingw64`.
+    # luarocks auto-detects the versioned MSYS2 layout (bin/lua5.1.exe,
+    # include/lua5.1/lua.h) from those flags.
     - name: Set up MSYS2 (Windows)
       if: runner.os == 'Windows'
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
         update: true
+        # inherit the Windows PATH so tools installed by other steps (e.g. mise via
+        # jdx/mise-action) resolve inside `msys2 {0}` steps. MSYS2/MINGW64 dirs stay
+        # first, so /mingw64/bin busted/lua5.1 still take precedence.
+        path-type: inherit
         install: >-
-          mingw-w64-x86_64-luajit
+          mingw-w64-x86_64-lua51
           mingw-w64-x86_64-lua-luarocks
           mingw-w64-x86_64-gcc
           git
@@ -98,13 +115,43 @@ runs:
       if: runner.os == 'Windows'
       shell: "msys2 {0}"
       run: |
-        luarocks install busted
-        luarocks install luacheck
-        luajit -v
+        set -euo pipefail
+        # lua-luarocks defaults to the unversioned Lua (5.5); pin every call to the
+        # 5.1 tree provisioned by mingw-w64-x86_64-lua51.
+        LR="luarocks --lua-version 5.1 --lua-dir /mingw64"
+        $LR install busted
+        $LR install luacheck
+        # Do NOT rely on luarocks' generated launcher: under MINGW64 luarocks
+        # classifies the platform as `windows` and emits a `.bat` wrapper only
+        # (no extensionless script), which is not runnable as bare `busted` under
+        # the msys2 bash shell. Synthesize a POSIX wrapper at /mingw64/bin/<tool>
+        # (always on the MINGW64 PATH in every `msys2 {0}` step) that execs the 5.1
+        # interpreter against the rock's real bin script. Canonical rocks layout:
+        #   /mingw64/lib/luarocks/rocks-5.1/<name>/<version>/bin/<script>
+        ROCKS_TREE=/mingw64/lib/luarocks/rocks-5.1
+        for t in busted luacheck; do
+          script="$(ls "$ROCKS_TREE/$t"/*/bin/"$t" 2>/dev/null | head -n1 || true)"
+          if [ ! -f "$script" ]; then
+            echo "::error::could not locate the $t bin script under $ROCKS_TREE (got: '$script')"
+            ls -R "$ROCKS_TREE/$t" 2>/dev/null || true
+            exit 1
+          fi
+          printf '#!/usr/bin/env bash\nexec lua5.1 %q "$@"\n' "$script" > "/mingw64/bin/$t"
+          chmod +x "/mingw64/bin/$t"
+        done
+        # Prove bare resolution AND real execution under Lua 5.1.5 so future drift
+        # fails loudly here, not in the separate test job.
+        command -v busted   >/dev/null || { echo "::error::busted not on PATH after provisioning";   exit 1; }
+        command -v luacheck >/dev/null || { echo "::error::luacheck not on PATH after provisioning"; exit 1; }
+        lua5.1 -v
         busted --version
+        luacheck --version
 
-    # ---- Windows branch (FALLBACK, named): MSVC + hererocks -> LuaJIT 2.1 ----
-    # Drop-in if PRIMARY MSYS2 fails on the first real Windows CI run. To adopt:
+    # ---- Windows branch (FALLBACK, named): MSVC + hererocks -> PUC Lua 5.1 ----
+    # Drop-in if PRIMARY MSYS2 fails on the first real Windows CI run. Like the
+    # PRIMARY leg (and the Unix leg) this provisions PUC Lua 5.1, NOT LuaJIT:
+    # gopher-lua fidelity, and LuaJIT trips the luarocks 65536-constant manifest
+    # wall (luarocks/luarocks#1797). To adopt:
     # DELETE the two PRIMARY Windows steps above, UNCOMMENT this block (mutually
     # exclusive), and switch the Windows test run-steps in test.yml from
     # `shell: 'msys2 {0}'` to `shell: cmd` invoking
@@ -123,7 +170,7 @@ runs:
     #   shell: cmd
     #   run: |
     #     python -m pip install --upgrade pip hererocks
-    #     python -m hererocks "%USERPROFILE%\.lua-ci" --luajit @v2.1 --luarocks latest
+    #     python -m hererocks "%USERPROFILE%\.lua-ci" --lua 5.1 --luarocks latest
     #     echo %USERPROFILE%\.lua-ci\bin>>%GITHUB_PATH%
     # - name: Install busted + luacheck (Windows, hererocks)
     #   if: runner.os == 'Windows'
@@ -131,5 +178,5 @@ runs:
     #   run: |
     #     call "%USERPROFILE%\.lua-ci\bin\luarocks" install busted
     #     call "%USERPROFILE%\.lua-ci\bin\luarocks" install luacheck
-    #     "%USERPROFILE%\.lua-ci\bin\luajit" -v
+    #     "%USERPROFILE%\.lua-ci\bin\lua" -v
     #     "%USERPROFILE%\.lua-ci\bin\busted" --version
