@@ -116,12 +116,18 @@ runs:
         LR="luarocks --lua-version 5.1 --lua-dir /mingw64"
         $LR install busted
         $LR install luacheck
-        # Put the Lua-5.1 deploy bin dir on PATH so bare `busted`/`luacheck` resolve
-        # in subsequent `msys2 {0}` steps (e.g. test.yml's `busted spec/ -v`).
-        echo "$($LR path --lr-bin)" >> "$GITHUB_PATH"
+        # luarocks deploys the busted/luacheck launchers into its 5.1 deploy-bin dir,
+        # which is NOT /mingw64/bin. Copy them into /mingw64/bin (always on the
+        # MINGW64 PATH in every `msys2 {0}` step) so bare `busted`/`luacheck` resolve
+        # both here and in test.yml's separate Windows test step, without depending on
+        # $GITHUB_PATH (whose Windows-path entries don't reliably translate into the
+        # msys2 POSIX shell).
+        LRBIN="$($LR path --lr-bin)"
+        cp "$LRBIN"/busted "$LRBIN"/luacheck /mingw64/bin/
         # Smoke check against the actual 5.1 interpreter the package ships.
         lua5.1 -v
         busted --version
+        luacheck --version
 
     # ---- Windows branch (FALLBACK, named): MSVC + hererocks -> PUC Lua 5.1 ----
     # Drop-in if PRIMARY MSYS2 fails on the first real Windows CI run. Like the
