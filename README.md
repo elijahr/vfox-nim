@@ -31,8 +31,10 @@ Automatically selects the fastest installation method for your platform. For pla
 ### With mise
 
 ```bash
-# Install the plugin directly from the Git URL (works today, no registry needed)
-mise plugin install https://github.com/elijahr/vfox-nim
+# Install this plugin under the local name `nim`, directly from the Git URL (works
+# today, no registry needed). The explicit `nim` name is required so the
+# `mise install nim@...` commands below resolve to THIS plugin, not a registry lookup.
+mise plugin install nim https://github.com/elijahr/vfox-nim
 
 # Install latest Nim
 mise install nim@latest
@@ -57,12 +59,14 @@ vfox install nim@latest
 vfox use -g nim@latest
 ```
 
-> **Installation paths / registry.** The URL/source install commands above work
-> immediately against this repository. The shorter registry-alias forms
-> (`mise plugins install nim` and `vfox add nim`) become available only after a
-> one-time registry submission (the mise registry for the mise alias; the
-> version-fox registry for the vfox alias). The exact registry repository and
-> submission process are confirmed during the release checklist, not asserted here.
+> **Installation paths / registry.** The commands above install this plugin
+> explicitly from `elijahr/vfox-nim` under the local name `nim`, and work
+> immediately. They do not depend on any registry: mise currently has no `nim`
+> shorthand (`mise registry nim` reports "tool not found"), and the bare registry
+> forms (`mise plugins install nim` with no URL, or `vfox add nim` with no
+> `--source`) would resolve to a different plugin or fail. A future one-time
+> registry submission could add a `nim` shorthand; until then, always install with
+> the explicit `elijahr/vfox-nim` URL/source and the `nim` name.
 
 ## Configuration
 
@@ -173,9 +177,10 @@ installed packages whenever a Nim version was reinstalled; it is no longer done.
 
 ### Migrating from asdf-nim / mise-nim
 
-If you currently manage Nim with the asdf/mise `nim` plugin
+If you currently manage Nim with asdf's `nim` plugin
 ([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim) — the repo
-the mise `nim` shorthand resolves to) and switch to vfox-nim, two differences matter:
+asdf's `nim` shorthand resolves to; mise has no `nim` shorthand today) and switch to
+vfox-nim, two differences matter:
 
 - **`NIMBLE_DIR` is no longer set per-version.** asdf-nim exports
   `NIMBLE_DIR=<install>/nimble`, so your globally-installed nimble packages live
@@ -187,7 +192,7 @@ the mise `nim` shorthand resolves to) and switch to vfox-nim, two differences ma
 - **Switching plugins is a reinstall, not an update.** `mise plugins update` pulls
   the installed plugin's own Git remote; it does not move you between different
   plugins. asdf-nim is an asdf-backend plugin and vfox-nim is a vfox-backend plugin,
-  so switch with `mise plugin uninstall nim && mise plugin install https://github.com/elijahr/vfox-nim`
+  so switch with `mise plugin uninstall nim && mise plugin install nim https://github.com/elijahr/vfox-nim`
   (for vfox: `vfox remove nim`, then re-add per the Quick Start).
 
 ## Development
