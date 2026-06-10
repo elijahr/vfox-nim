@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (README)
+    url: https://github.com/elijahr/vfox-nim#readme
+    about: Check the README first. Installation, configuration, and the install_method options are documented there.
+  - name: Questions and Discussions
+    url: https://github.com/elijahr/vfox-nim/discussions
+    about: Ask questions, share ideas, or get help. (If Discussions are not enabled, open a Feature Request or Bug Report instead.)
