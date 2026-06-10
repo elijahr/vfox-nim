@@ -137,13 +137,15 @@ jobs:
       - name: Run mise integration tests (Windows)
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
-        # cd into the workspace (the msys2 shell starts in the MSYS2 home). The
-        # busted target is a single file so the trailing-slash discovery issue
-        # does not apply, but the cd is still required to resolve the relative
-        # test/ path and the plugin under test.
+        # Run busted DIRECTLY (not via `mise exec`): `mise exec` activates the
+        # project env, which makes mise try to install .tool-versions' `lua 5.1`
+        # from source (vfox-lua `make` fails on Windows). busted is already on the
+        # msys2 PATH (setup-lua), and the spec drives mise itself via the inherited
+        # PATH (path-type: inherit). cd into the workspace first (msys2 starts in
+        # the MSYS2 home).
         run: |
           cd "$(cygpath -u "$GITHUB_WORKSPACE")"
-          mise exec -- busted test/mise-integration_spec.lua -v
+          busted test/mise-integration_spec.lua -v
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_YES: 1
