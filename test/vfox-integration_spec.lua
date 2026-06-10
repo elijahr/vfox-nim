@@ -190,22 +190,39 @@ local function build_env_prefix()
         table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
     end
 
-    -- PATH handling is OS-aware. On Windows (detected via package.config's path
-    -- separator) the test runs under msys2, where the hardcoded Unix SANITIZED_PATH
-    -- would wipe out /mingw64/bin (busted's lua5.1, coreutils), /usr/bin (msys
-    -- coreutils), and the inherited vfox.exe dir, breaking every vfox/nim/printf/
-    -- command -v call. The global-tool-scrub hermeticity rationale doesn't apply on
-    -- a clean CI runner, so we instead PREPEND the msys2 dirs to the INHERITED PATH
-    -- so busted's lua5.1, msys coreutils, and the inherited vfox.exe all resolve. On
-    -- non-Windows we keep the hardcoded SANITIZED_PATH unchanged to preserve
-    -- macOS/Linux hermeticity, but PREPEND $HOME/.local/bin where jdx/mise-action
-    -- installs the mise binary on Unix hosted runners (not in SANITIZED_PATH). vfox
-    -- itself lives at /usr/bin or /opt/homebrew/bin (already covered), so this is
-    -- harmless here but keeps both specs symmetric. ~/.local/bin holds mise, not
-    -- the dev's global nim (~/.local/share/mise/installs), so hermeticity holds.
-    -- HOME is expanded via os.getenv since SANITIZED_PATH is a literal Lua string.
+    -- PATH handling is OS-aware AND CI-aware.
+    --
+    -- On Windows (detected via package.config's path separator) the test runs under
+    -- msys2, where the hardcoded Unix SANITIZED_PATH would wipe out /mingw64/bin
+    -- (busted's lua5.1, coreutils), /usr/bin (msys coreutils), and the inherited
+    -- vfox.exe dir, breaking every vfox/nim/printf/command -v call. So on Windows we
+    -- PREPEND the msys2 dirs to the INHERITED PATH so busted's lua5.1, msys
+    -- coreutils, and the inherited vfox.exe all resolve. (A clean CI runner has no
+    -- globally-active nim to scrub, so the hermeticity rationale doesn't apply here
+    -- anyway.)
+    --
+    -- On non-Windows, the SANITIZED_PATH scrub exists for DEV-MACHINE hermeticity:
+    -- it removes the developer's globally-active mise/nim install dir from PATH so
+    -- the test uses only the sandbox toolchain (reached via `vfox activate`). That
+    -- scrub is necessary ONLY on a dev machine. On hosted CI runners (GitHub Actions
+    -- sets CI=true) there is NO globally-activated nim, so PATH-scrubbing buys
+    -- nothing and actively breaks tool resolution: vfox/mise are installed to
+    -- runner-specific dirs (apt, brew, scoop, mise-action) that may NOT be in
+    -- SANITIZED_PATH, so a hardcoded PATH can make `command -v vfox` fail.
+    --   - CI set:   PRESERVE the inherited PATH (no export) so vfox (installed by
+    --               apt/brew/scoop) and mise resolve. Hermeticity on CI comes from
+    --               the sandbox VFOX_HOME (set via env_vars) plus the
+    --               SCRUBBED_ENV_VARS unsetting above, NOT from PATH scrubbing. Since
+    --               the runner has no global nim on PATH, preserving PATH introduces
+    --               no leaked nim; the only nim in scope is the sandbox one reached
+    --               via `vfox activate`.
+    --   - CI unset: keep the SANITIZED_PATH export (with the ~/.local/bin prepend)
+    --               for dev hermeticity, exactly as before. HOME is expanded via
+    --               os.getenv since SANITIZED_PATH is a literal Lua string.
     if IS_WINDOWS then
         table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
+    elseif os.getenv("CI") then
+        -- Preserve inherited PATH on CI; do not emit an export PATH line.
     else
         local home = os.getenv("HOME") or ""
         table.insert(parts, string.format("export PATH='%s/.local/bin:%s';", home, SANITIZED_PATH))

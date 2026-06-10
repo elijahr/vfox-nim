@@ -200,23 +200,39 @@ local function build_env_prefix()
         table.insert(parts, "unset " .. table.concat(unset_names, " ") .. ";")
     end
 
-    -- PATH handling is OS-aware. On Windows (detected the same way exec() does,
-    -- via package.config's path separator) the test runs under msys2, where the
-    -- hardcoded Unix SANITIZED_PATH would wipe out /mingw64/bin (busted's lua5.1,
-    -- coreutils), /usr/bin (msys coreutils), and the inherited mise.exe dir,
-    -- breaking every mise/nim/awk/printf/command -v call. The global-tool-scrub
-    -- hermeticity rationale doesn't apply on a clean CI runner, so we instead
-    -- PREPEND the msys2 dirs to the INHERITED PATH so busted's lua5.1, msys
-    -- coreutils, and the inherited mise.exe all resolve. On non-Windows we keep
-    -- the hardcoded SANITIZED_PATH unchanged to preserve macOS/Linux hermeticity,
-    -- but PREPEND $HOME/.local/bin: jdx/mise-action installs the mise binary there
-    -- on Unix hosted runners, and that dir is NOT in SANITIZED_PATH, so without it
-    -- `command -v mise` fails on hosted macOS/Linux. This does NOT leak the dev's
-    -- global nim, which lives under ~/.local/share/mise/installs (not ~/.local/bin),
-    -- so hermeticity is preserved. HOME is expanded via os.getenv since
-    -- SANITIZED_PATH is a literal Lua string.
+    -- PATH handling is OS-aware AND CI-aware.
+    --
+    -- On Windows (detected the same way exec() does, via package.config's path
+    -- separator) the test runs under msys2, where the hardcoded Unix SANITIZED_PATH
+    -- would wipe out /mingw64/bin (busted's lua5.1, coreutils), /usr/bin (msys
+    -- coreutils), and the inherited mise.exe dir, breaking every mise/nim/awk/
+    -- printf/command -v call. So on Windows we PREPEND the msys2 dirs to the
+    -- INHERITED PATH so busted's lua5.1, msys coreutils, and the inherited mise.exe
+    -- all resolve. (A clean CI runner has no globally-active nim to scrub, so the
+    -- hermeticity rationale doesn't apply here anyway.)
+    --
+    -- On non-Windows, the SANITIZED_PATH scrub exists for DEV-MACHINE hermeticity:
+    -- it removes the developer's globally-active mise/nim install dir from PATH so
+    -- the test uses only the sandbox toolchain (reached via `mise exec`). That scrub
+    -- is necessary ONLY on a dev machine. On hosted CI runners (GitHub Actions sets
+    -- CI=true) there is NO globally-activated nim, so PATH-scrubbing buys nothing and
+    -- actively breaks tool resolution: jdx/mise-action installs `mise` to a
+    -- runner-specific dir that is NOT in SANITIZED_PATH (not /opt/homebrew/bin, not
+    -- ~/.local/bin), so a hardcoded PATH makes `command -v mise` fail.
+    --   - CI set:   PRESERVE the inherited PATH (no export) so mise (installed by
+    --               mise-action/apt/brew/scoop to a runner-specific dir) resolves.
+    --               Hermeticity on CI comes from the sandbox MISE_DATA_DIR (set via
+    --               env_vars) plus the SCRUBBED_ENV_VARS unsetting above, NOT from
+    --               PATH scrubbing. Since the runner has no global nim on PATH,
+    --               preserving PATH introduces no leaked nim; the only nim in scope
+    --               is the sandbox one reached via `mise exec`.
+    --   - CI unset: keep the SANITIZED_PATH export (with the ~/.local/bin prepend)
+    --               for dev hermeticity, exactly as before. HOME is expanded via
+    --               os.getenv since SANITIZED_PATH is a literal Lua string.
     if IS_WINDOWS then
         table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
+    elseif os.getenv("CI") then
+        -- Preserve inherited PATH on CI; do not emit an export PATH line.
     else
         local home = os.getenv("HOME") or ""
         table.insert(parts, string.format("export PATH='%s/.local/bin:%s';", home, SANITIZED_PATH))
