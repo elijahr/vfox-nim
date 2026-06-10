@@ -172,9 +172,11 @@ installed packages whenever a Nim version was reinstalled; it is no longer done.
 ### Coming from asdf's `nim` plugin
 
 vfox-nim is an independent alternative to asdf's `nim` plugin
-([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim)) — not an
-official successor to it, and mise has no `nim` plugin of its own. If you switch from
-asdf-nim to vfox-nim, two differences matter:
+([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim)) written by
+the same author, intended as a successor for use with mise and vfox. (A separate
+[`mise-plugins/mise-nim`](https://github.com/mise-plugins/mise-nim) plugin exists; it
+is a fork of `asdf-nim` that runs under mise's legacy asdf-bash-plugin shim, not a
+native vfox plugin.) If you switch from asdf-nim to vfox-nim, two differences matter:
 
 - **`NIMBLE_DIR` is no longer set per-version.** asdf-nim exports
   `NIMBLE_DIR=<install>/nimble`, so your globally-installed nimble packages live
