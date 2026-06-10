@@ -31,9 +31,6 @@ Automatically selects the fastest installation method for your platform. For pla
 ### With mise
 
 ```bash
-# `nim` here is a LOCAL plugin name you choose — any name works. Registering it as
-# `nim` lets you then run `mise use nim@<version>`. This is a third-party plugin, not
-# mise's `nim` (mise has no `nim` plugin), so you must pass the repo URL explicitly.
 mise plugin install nim https://github.com/elijahr/vfox-nim
 
 # Install latest Nim
@@ -49,8 +46,6 @@ mise use -g nim@latest
 ### With vfox
 
 ```bash
-# `--alias nim` is a LOCAL name you choose (any name works). This is a third-party
-# plugin, not vfox's `nim`, so the explicit `--source` URL is required.
 vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
 
 # Install latest Nim
