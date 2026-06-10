@@ -54,7 +54,11 @@ describe("install logic (Tier II)", function()
         tmp_name = tmp_name:gsub("\\", "/")
         os.remove(tmp_name)
         tmp_home = tmp_name .. "-vfox-nim-home"
-        os.execute("mkdir -p '" .. tmp_home .. "/.cache/vfox-nim'")
+        if M.is_windows() then
+            os.execute('mkdir "' .. tmp_home:gsub("/", "\\") .. '\\.cache\\vfox-nim"')
+        else
+            os.execute("mkdir -p '" .. tmp_home .. "/.cache/vfox-nim'")
+        end
         os.getenv = function(n)
             if n == "HOME" then
                 return tmp_home
@@ -79,7 +83,11 @@ describe("install logic (Tier II)", function()
         os.getenv = orig_getenv
         assert.is_truthy(orig_home) -- sanity: original HOME captured
         if tmp_home then
-            os.execute("rm -rf '" .. tmp_home .. "'")
+            if M.is_windows() then
+                os.execute('rmdir /s /q "' .. tmp_home:gsub("/", "\\") .. '"')
+            else
+                os.execute("rm -rf '" .. tmp_home .. "'")
+            end
         end
     end)
 
