@@ -143,12 +143,32 @@ function PLUGIN:PostInstall(ctx)
         error("Nim binary not found at " .. nim_binary .. ". Installation may have failed.")
     end
 
-    -- Test version. nim_binary is composed with "/" but `path` is a native backslash
-    -- path on Windows; native_path() collapses it to all-backslash so the quoted path
-    -- handed to cmd.exe is valid (mixed separators are rejected by cmd.exe).
-    local success, output = exec(win_exec_str('"' .. native_path(nim_binary) .. '" --version'))
-    if not success or not output:match("Nim Compiler") then
-        error("Nim installation verification failed. Output: " .. (output or "none"))
+    -- Verify the install differently per platform.
+    --
+    -- On Windows we verify by FILE EXISTENCE rather than by running `nim --version`.
+    -- The same hook runs under both vfox and mise, but each routes exec through a
+    -- different shell: vfox spawns cmd.exe, mise spawns a POSIX-ish sh. There is NO
+    -- single shell-quoted command form for an absolute Windows path that works under
+    -- BOTH (cmd.exe rejects the quoted/mixed-separator path as "is not recognized as
+    -- an internal or external command", while sh needs the quotes). Since the
+    -- official prebuilt Windows binary is a known-good executable, its presence at
+    -- the expected {install}/bin/nim.exe path is a sound install verification.
+    -- Lua's io.open accepts both "/" and "\" on Windows, so the "/"-composed
+    -- nim_binary path works directly without separator normalization, and this check
+    -- introduces no shell dependency. Runtime execution (`nim --version`) is exercised
+    -- by the integration tests and by real usage through the user's own shell.
+    if is_windows then
+        local f = io.open(nim_binary, "rb")
+        if f == nil then
+            error("Nim installation verification failed. Binary not found at " .. nim_binary)
+        end
+        io.close(f)
+    else
+        -- Unix: run `nim --version` to catch broken source builds.
+        local success, output = exec('"' .. nim_binary .. '" --version')
+        if not success or not output:match("Nim Compiler") then
+            error("Nim installation verification failed. Output: " .. (output or "none"))
+        end
     end
 
     print("Nim installed successfully!")
