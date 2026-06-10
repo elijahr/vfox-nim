@@ -1,11 +1,6 @@
 # vfox-nim
 
-Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/).
-
-> **Third-party plugin.** vfox-nim is an independent project — not affiliated with
-> or endorsed by the mise or vfox projects, and neither registry ships a `nim`
-> plugin. You install it explicitly from this repository (see Quick Start below).
-> The name you register it under is your choice; the examples here use `nim`.
+Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/). Supports Windows, macOS, and Linux, on amd64, x86 and arm64.
 
 ## Features
 
