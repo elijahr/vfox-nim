@@ -111,25 +111,34 @@ runs:
       if: runner.os == 'Windows'
       shell: "msys2 {0}"
       run: |
+        set -euo pipefail
         # lua-luarocks defaults to the unversioned Lua (5.5); pin every call to the
         # 5.1 tree provisioned by mingw-w64-x86_64-lua51.
         LR="luarocks --lua-version 5.1 --lua-dir /mingw64"
         $LR install busted
         $LR install luacheck
-        # luarocks deploys the launchers into the per-user deploy-bin
-        # ($HOME/.luarocks/bin), NOT /mingw64/bin (and `path --lr-bin` emits a
-        # ;-separated list of Windows-backslash paths under MSYS2, so don't parse it).
-        # Copy the launchers into /mingw64/bin (always on the MINGW64 PATH in every
-        # `msys2 {0}` step) so bare `busted`/`luacheck` resolve both here and in
-        # test.yml's separate Windows test step; fall back to a scoped find, then
-        # assert busted resolves so a future drift fails loudly here, not in the tests.
-        cp "$HOME/.luarocks/bin/busted" "$HOME/.luarocks/bin/luacheck" /mingw64/bin/ 2>/dev/null || \
-          for t in busted luacheck; do
-            f="$(find "$HOME/.luarocks" /mingw64 -name "$t" -type f 2>/dev/null | head -n1)"
-            [ -n "$f" ] && cp "$f" /mingw64/bin/
-          done
-        command -v busted >/dev/null || { echo "::error::busted not on PATH after provisioning"; exit 1; }
-        # Smoke check against the actual 5.1 interpreter the package ships.
+        # Do NOT rely on luarocks' generated launcher: under MINGW64 luarocks
+        # classifies the platform as `windows` and emits a `.bat` wrapper only
+        # (no extensionless script), which is not runnable as bare `busted` under
+        # the msys2 bash shell. Synthesize a POSIX wrapper at /mingw64/bin/<tool>
+        # (always on the MINGW64 PATH in every `msys2 {0}` step) that execs the 5.1
+        # interpreter against the rock's real bin script. Canonical rocks layout:
+        #   /mingw64/lib/luarocks/rocks-5.1/<name>/<version>/bin/<script>
+        ROCKS_TREE=/mingw64/lib/luarocks/rocks-5.1
+        for t in busted luacheck; do
+          script="$(ls "$ROCKS_TREE/$t"/*/bin/"$t" 2>/dev/null | head -n1 || true)"
+          if [ ! -f "$script" ]; then
+            echo "::error::could not locate the $t bin script under $ROCKS_TREE (got: '$script')"
+            ls -R "$ROCKS_TREE/$t" 2>/dev/null || true
+            exit 1
+          fi
+          printf '#!/usr/bin/env bash\nexec lua5.1 %q "$@"\n' "$script" > "/mingw64/bin/$t"
+          chmod +x "/mingw64/bin/$t"
+        done
+        # Prove bare resolution AND real execution under Lua 5.1.5 so future drift
+        # fails loudly here, not in the separate test job.
+        command -v busted   >/dev/null || { echo "::error::busted not on PATH after provisioning";   exit 1; }
+        command -v luacheck >/dev/null || { echo "::error::luacheck not on PATH after provisioning"; exit 1; }
         lua5.1 -v
         busted --version
         luacheck --version
