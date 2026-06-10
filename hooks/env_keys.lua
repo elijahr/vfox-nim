@@ -12,7 +12,7 @@ function PLUGIN:EnvKeys(ctx)
         value = mainPath .. "/bin",
     })
 
-    -- NIMBLE_DIR is intentionally left UNSET (matching choosinim / standard
+    -- NIMBLE_DIR is intentionally left UNSET (matching choosenim / standard
     -- nimble) so nim uses the shared ~/.nimble. The plugin previously set
     -- NIMBLE_DIR to a per-version {install}/nimble path (inherited from
     -- asdf-nim), which polluted the managed install dir and lost packages on

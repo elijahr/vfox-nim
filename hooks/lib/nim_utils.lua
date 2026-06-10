@@ -200,6 +200,12 @@ end
 -- Adjust "YYYY-MM-DD" by `offset` days, returns "YYYY-MM-DD".
 -- Pure integer arithmetic: timezone-, DST-, and OS-independent. No os.time/os.date/shell-out.
 function M.adjust_date(date_str, offset)
+    -- Defensive: a nil/non-string date_str would crash the :match below. Return the
+    -- same "" the function already yields for malformed input (consistent with the
+    -- install_logic_spec expectation that garbage input yields "").
+    if type(date_str) ~= "string" then
+        return ""
+    end
     local y, m, d = date_str:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
     if not y then
         return ""

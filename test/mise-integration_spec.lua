@@ -565,7 +565,13 @@ describe("Mise Plugin Integration Tests", function()
             --
             -- This stays a REAL assertion: if the plugin wrongly injected a non-empty
             -- NIMBLE_DIR, the bracket content would be that path and the assert FAILS.
-            local nimble_dir_raw = exec("mise exec nim@2.2.4 -- sh -c 'echo \"NIMBLE_DIR=[$NIMBLE_DIR]\"' 2>&1")
+            local nimble_dir_raw, nimble_dir_ok =
+                exec("mise exec nim@2.2.4 -- sh -c 'echo \"NIMBLE_DIR=[$NIMBLE_DIR]\"' 2>&1")
+            -- Guard against a green mirage: if the query command itself failed, the
+            -- output would not carry the bracketed sentinel, nimble_dir would be ""
+            -- and the no-NIMBLE_DIR assertion below would pass vacuously. Fail loudly
+            -- on a failed query so the empty-value check only runs on a real result.
+            assert.is_true(nimble_dir_ok, "NIMBLE_DIR query command failed: " .. (nimble_dir_raw or ""))
             local nimble_dir = ((nimble_dir_raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
                 :gsub("%c", "")
                 :gsub("%s", "")
