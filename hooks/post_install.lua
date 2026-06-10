@@ -56,6 +56,25 @@ function PLUGIN:PostInstall(ctx)
         return p
     end
 
+    -- Wrap a FULLY-COMPOSED command string for safe execution under cmd.exe on Windows.
+    -- vfox's exec on Windows routes through io.popen -> `cmd.exe /c "<command>"`. When the
+    -- inner <command> STARTS with a double-quote (e.g. a quoted absolute path:
+    -- `"D:\...\nim.exe" --version`), cmd.exe's quote-stripping rule strips the leading and
+    -- trailing quote of the whole /c argument, mangling the command into
+    -- `D:\...\nim.exe" --version` and failing with "is not recognized...". The documented
+    -- cmd.exe remedy is to add an EXTRA outer quote pair around the whole command, so that
+    -- after cmd strips the outermost pair the inner quotes survive intact:
+    --   cmd /c ""D:\...\nim.exe" --version"
+    -- Windows-only: guarded by is_windows() so Unix shells (which would mis-handle the extra
+    -- quotes) keep the existing single-quoted form byte-for-byte. The same hook runs under
+    -- both mise and vfox; the extra outer pair is also cmd.exe-correct for mise's shell.
+    local function win_exec_str(cmd)
+        if is_windows then
+            return '"' .. cmd .. '"'
+        end
+        return cmd
+    end
+
     -- Check if we need to restructure the archive
     -- mise: extracts to /path/to/install -> need to move nim-VERSION/* up
     -- vfox: extracts to /path/to/nim-VERSION -> files are already in place
@@ -110,7 +129,7 @@ function PLUGIN:PostInstall(ctx)
         if is_windows and file_exists(path .. "/finish.exe") then
             print("Running Windows post-install setup (finish.exe)...")
             print("This will configure PATH and check for C compiler (MinGW)")
-            local success, _ = exec('"' .. native_path(path .. "/finish.exe") .. '"')
+            local success, _ = exec(win_exec_str('"' .. native_path(path .. "/finish.exe") .. '"'))
             if not success then
                 print("Warning: finish.exe failed, but this is not critical")
                 print("You may need to manually install MinGW for compiling Nim code")
@@ -127,7 +146,7 @@ function PLUGIN:PostInstall(ctx)
     -- Test version. nim_binary is composed with "/" but `path` is a native backslash
     -- path on Windows; native_path() collapses it to all-backslash so the quoted path
     -- handed to cmd.exe is valid (mixed separators are rejected by cmd.exe).
-    local success, output = exec('"' .. native_path(nim_binary) .. '" --version')
+    local success, output = exec(win_exec_str('"' .. native_path(nim_binary) .. '" --version'))
     if not success or not output:match("Nim Compiler") then
         error("Nim installation verification failed. Output: " .. (output or "none"))
     end

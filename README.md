@@ -135,6 +135,10 @@ VFOX_NIM_INSTALL_METHOD = "source"
 - **`binary`**: Same as auto, but fails with error instead of falling back to source build.
 - **`source`**: Immediately downloads source tarball and builds (stable versions only).
 
+> **Windows note.** On Windows the plugin installs official prebuilt Nim binaries.
+> Forcing a source compile (`VFOX_NIM_INSTALL_METHOD=source`) is **not supported on
+> Windows**; `auto` correctly selects the binary install path there.
+
 **Testing your configuration:**
 
 ```bash

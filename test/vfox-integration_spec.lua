@@ -590,6 +590,14 @@ describe("vfox Plugin Integration Tests", function()
         end)
 
         it("should install with VFOX_NIM_INSTALL_METHOD='source'", function()
+            -- Source compilation is not supported on Windows: Windows users get official
+            -- prebuilt binaries, and `auto` correctly selects the binary path. Forcing a
+            -- source build would compile Nim from C sources via MinGW/koch, which is out of
+            -- scope. Mark pending so it shows as skipped (not passed) on Windows.
+            if IS_WINDOWS then
+                pending("source build not supported on Windows; binary is the supported install path")
+                return
+            end
             -- Note: This test can be very slow as it builds from source
             exec("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
