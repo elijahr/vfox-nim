@@ -5,22 +5,91 @@
 -- Test environment setup
 local IS_WINDOWS = package.config:sub(1, 1) == "\\"
 
--- On Windows (msys2's native-Windows Lua), os.execute/io.popen spawn cmd.exe,
--- which cannot interpret the POSIX shell builtins this spec emits (unset/export/
--- $PATH/command -v/mkdir -p/rm -rf/{ ...; }/printf). Wrap every spawned command
--- in `bash -c '...'` so msys/git-bash interprets it. On Unix the command already
--- runs through /bin/sh, so this is a no-op and macOS behavior is unchanged.
-local function wrap_for_shell(cmd)
+-- On Windows the busted Lua is NATIVE MinGW Lua, so io.popen/os.execute spawn
+-- cmd.exe (NOT bash). The previous `bash -c '<posix>'` inline approach FAILED:
+-- cmd.exe parses the string first and mangles the nested quotes ("unexpected EOF").
+--
+-- The robust approach used here is a temp-script file: the full POSIX command
+-- string is written verbatim to a unique, cwd-relative script (e.g.
+-- ./.vfox-spawn-<n>.sh) and spawned via `bash <script>`. cmd.exe then sees only
+-- `bash .vfox-spawn-N.sh` -- no nested quoting to mangle. The script is written in
+-- binary mode with bare "\n" line endings (no "\r") so bash doesn't choke, and is
+-- always removed afterward (os.remove). A cwd-relative name avoids all
+-- Windows<->POSIX path translation: native-Windows Lua's cwd is the workspace and
+-- the bash spawned by cmd.exe inherits it, so the same relative path resolves
+-- identically for the Lua writer and the bash reader.
+--
+-- On non-Windows the EXACT prior direct-execution path is preserved (no temp file):
+-- the command already runs through /bin/sh, so macOS/Linux behavior is unchanged.
+
+-- Module-level counter guaranteeing unique temp-script names across spawns.
+local spawn_counter = 0
+
+-- Shared Windows-only temp-script runner. `cmd` is the fully-composed POSIX
+-- command string (build_env_prefix() + caller command + any sentinel/redirects),
+-- UNCHANGED in content. `want_output` selects capture mode:
+--   want_output=true  -> returns (captured_stdout_stderr, success)
+--   want_output=false -> returns ("", success) where success is the exit status
+-- On Windows the command is run via a temp script; on non-Windows it runs directly.
+local function run_posix(cmd, want_output)
     if IS_WINDOWS then
-        return "bash -c '" .. cmd:gsub("'", "'\\''") .. "'"
+        spawn_counter = spawn_counter + 1
+        local script_relpath = "./.vfox-spawn-" .. os.time() .. "-" .. spawn_counter .. ".sh"
+        -- Binary mode + bare "\n" endings so bash never sees a stray "\r".
+        local script = io.open(script_relpath, "wb")
+        script:write("#!/usr/bin/env bash\n")
+        script:write(cmd)
+        script:write("\n")
+        script:close()
+
+        local output, success
+        if want_output then
+            local handle = io.popen("bash " .. script_relpath .. " 2>&1")
+            output = handle:read("*a")
+            -- LuaJIT close() returns only `true`; callers that need real exit
+            -- status (exec) parse the sentinel from `output` instead.
+            success = handle:close() and true or false
+        else
+            local result, _, exit_code = os.execute("bash " .. script_relpath)
+            output = ""
+            if type(result) == "number" then
+                success = result == 0
+            elseif type(result) == "boolean" then
+                success = result
+            elseif exit_code then
+                success = exit_code == 0
+            else
+                success = false
+            end
+        end
+
+        os.remove(script_relpath)
+        return output, success
     end
-    return cmd
+
+    -- Non-Windows: direct execution, byte-for-byte the prior behavior.
+    if want_output then
+        local handle = io.popen(cmd .. " 2>&1")
+        local output = handle:read("*a")
+        local success = handle:close() and true or false
+        return output, success
+    end
+
+    local result, _, exit_code = os.execute(cmd)
+    if type(result) == "number" then
+        return "", result == 0
+    elseif type(result) == "boolean" then
+        return "", result
+    elseif exit_code then
+        return "", exit_code == 0
+    end
+    return "", false
 end
 
--- Run a POSIX command via os.execute, routing through bash on Windows. Returns
--- the raw os.execute results so callers can interpret exit status themselves.
+-- Run a POSIX command, ignoring its result. On Windows it routes through the
+-- temp-script mechanism; on non-Windows it runs directly via os.execute.
 local function raw_execute(cmd)
-    return os.execute(wrap_for_shell(cmd))
+    run_posix(cmd, false)
 end
 
 -- Compute the base temp directory for the sandbox. os.tmpname() returns native
@@ -30,9 +99,7 @@ end
 -- approach so macOS/Linux behavior is byte-for-byte identical.
 local function make_test_base_dir()
     if IS_WINDOWS then
-        local handle = io.popen(wrap_for_shell("mktemp -d") .. " 2>&1")
-        local dir = handle:read("*a")
-        handle:close()
+        local dir = run_posix("mktemp -d", true)
         dir = (dir or ""):gsub("%s+$", "")
         return dir .. "/mise-nim-test"
     end
@@ -44,9 +111,7 @@ end
 -- preserves the os.tmpname()-based approach.
 local function make_temp_dir()
     if IS_WINDOWS then
-        local handle = io.popen(wrap_for_shell("mktemp -d") .. " 2>&1")
-        local dir = handle:read("*a")
-        handle:close()
+        local dir = run_posix("mktemp -d", true)
         return (dir or ""):gsub("%s+$", "")
     end
     local dir = os.tmpname()
@@ -151,14 +216,12 @@ local function exec(cmd)
     -- Wrap the (possibly compound) command in a group so $? reflects its exit
     -- status before the trailing 2>&1 redirect is applied.
     local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
-    -- On Windows, io.popen runs through cmd.exe which cannot interpret the POSIX
-    -- shell builtins used above (unset/export/{ ...; }/printf). wrap_for_shell
-    -- re-wraps in `bash -c` so msys/git-bash interprets the command. On Unix this
-    -- is a no-op, so behavior is identical (the command already runs through /bin/sh).
-    full_cmd = wrap_for_shell(full_cmd)
-    local handle = io.popen(full_cmd .. " 2>&1")
-    local result = handle:read("*a")
-    handle:close()
+    -- run_posix captures stdout+stderr. On Windows it writes full_cmd to a temp
+    -- script and runs `bash <script> 2>&1` (cmd.exe never sees the POSIX builtins
+    -- or nested quotes); on Unix it runs `io.popen(full_cmd .. " 2>&1")` directly.
+    -- The sentinel printf inside full_cmd carries the real exit status back in the
+    -- captured output, parsed below (LuaJIT close() can't report it reliably).
+    local result = run_posix(full_cmd, true)
 
     -- Recover the exit status from the sentinel, then strip it from the output.
     local code = result:match(EXIT_MARKER .. "(%d+)%s*$")
@@ -171,22 +234,13 @@ local function exec(cmd)
 end
 
 local function exec_status(cmd)
-    -- Compose the POSIX prefix + command, then route through bash on Windows so
-    -- the builtins (unset/export/command -v/test/etc.) are interpreted by msys
-    -- rather than cmd.exe. On Unix wrap_for_shell is a no-op (runs via /bin/sh).
-    local full_cmd = wrap_for_shell(build_env_prefix() .. cmd .. " >/dev/null 2>&1")
-    local result, _, exit_code = os.execute(full_cmd)
-    -- Lua 5.1 returns exit code as number
-    -- Lua 5.2+ returns true/nil, "exit", code
-    if type(result) == "number" then
-        return result == 0
-    elseif type(result) == "boolean" then
-        return result
-    elseif exit_code then
-        return exit_code == 0
-    else
-        return false
-    end
+    -- Compose the POSIX prefix + command (output discarded). run_posix runs it via
+    -- os.execute and normalizes the Lua 5.1 (number) / 5.2+ (boolean) status into a
+    -- boolean. On Windows it goes through the temp-script mechanism so the builtins
+    -- (unset/export/command -v/test/etc.) are interpreted by bash, not cmd.exe.
+    local full_cmd = build_env_prefix() .. cmd .. " >/dev/null 2>&1"
+    local _, success = run_posix(full_cmd, false)
+    return success
 end
 
 local function file_exists(path)
