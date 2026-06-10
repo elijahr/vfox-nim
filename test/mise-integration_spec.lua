@@ -449,17 +449,23 @@ describe("Mise Plugin Integration Tests", function()
                 "mise where nim@2.2.4 failed after installation"
             )
 
-            -- mise composes its install path with native backslashes on Windows
-            -- (...\installs\nim\2.2.4), so normalize separators to forward slashes
-            -- BEFORE appending the bin/nim segment and before the file_exists check
-            -- (which runs `test -f` under bash, where backslashes are not path
-            -- separators and would make the existence check fail spuriously).
-            -- normalize_sep is a no-op on Unix.
-            local nim_path = normalize_sep(exec("mise where nim@2.2.4"))
-            -- Windows installs `nim.exe`; Unix installs `nim`. BIN_EXT mirrors the
-            -- plugin's post_install nim_ext so the on-disk binary is asserted exactly.
-            local nim_binary = nim_path .. "/bin/nim" .. BIN_EXT
-            assert.is_true(file_exists(nim_binary), "nim binary not found at " .. nim_binary)
+            -- Verify the nim binary is present WITHOUT round-tripping `mise where`'s
+            -- native Windows path through Lua. The prior approach captured `mise where`
+            -- (a native `D:\...\installs\nim\2.2.4` path on Windows), normalized its
+            -- separators to `D:/...`, then ran `test -f` on it under bash -- but bash's
+            -- `test -f` cannot resolve a `D:/...` drive-letter path (it is not an msys2
+            -- POSIX path), so the check failed spuriously even though the install is
+            -- fine (the very next `mise exec ... nim --version` succeeds).
+            --
+            -- Instead, expand `mise where` INSIDE the same bash invocation so the path
+            -- never leaves the POSIX world (no native<->POSIX round-trip), and assert
+            -- the binary exists there. This stays a real presence assertion: it FAILS
+            -- if bin/nim<ext> is missing. BIN_EXT mirrors the plugin's post_install
+            -- nim_ext (`.exe` on Windows, empty on Unix). No-op difference on Unix.
+            assert.is_true(
+                exec_status('test -f "$(mise where nim@2.2.4)/bin/nim' .. BIN_EXT .. '"'),
+                "nim binary not found under $(mise where nim@2.2.4)/bin/nim" .. BIN_EXT
+            )
         end)
     end)
 
@@ -524,17 +530,22 @@ describe("Mise Plugin Integration Tests", function()
             -- The harness scrubs the developer's ambient NIMBLE_DIR for every command,
             -- so the ONLY way $NIMBLE_DIR could be non-empty under `mise exec nim@2.2.4`
             -- is if the plugin's env_keys injected it. Assert it is empty.
-            -- On Windows the queried value may come back nil or carry a trailing CR
-            -- (msys2 output), while the plugin correctly injects nothing. Normalize
-            -- before comparing: nil or empty-after-trim both mean "no NIMBLE_DIR
-            -- injected" and PASS; a non-empty trimmed path still FAILS (real
-            -- assertion, not a green mirage). normalize_sep collapses separators and
-            -- strips trailing CR/whitespace; it is a no-op on Unix.
-            -- normalize_sep first (strips the trailing newline + any CR), THEN take
-            -- the last line, so a wrongly-injected "/path\n" does not collapse to an
-            -- empty last line and falsely pass.
-            local nimble_dir_raw = exec("mise exec nim@2.2.4 -- sh -c 'echo $NIMBLE_DIR' 2>&1")
-            local nimble_dir = normalize_sep(nimble_dir_raw):match("[^\n]*$")
+            -- Emit a BRACKETED sentinel (`NIMBLE_DIR=[$NIMBLE_DIR]`) and extract only
+            -- the value INSIDE the brackets. This is robust against interleaved
+            -- mise INFO/DEBUG log lines and stray interior CRs that survived the prior
+            -- last-line + normalize_sep approach: under MISE_DEBUG the captured output
+            -- can carry a log line (or an invisible byte) that made an "empty-looking"
+            -- value compare unequal to "". By anchoring on `[...]` we read exactly the
+            -- variable's value regardless of surrounding log noise. We then strip ALL
+            -- control/whitespace chars (%c and %s) from the captured value so an
+            -- invisible CR/space cannot defeat the equality check.
+            --
+            -- This stays a REAL assertion: if the plugin wrongly injected a non-empty
+            -- NIMBLE_DIR, the bracket content would be that path and the assert FAILS.
+            local nimble_dir_raw = exec("mise exec nim@2.2.4 -- sh -c 'echo \"NIMBLE_DIR=[$NIMBLE_DIR]\"' 2>&1")
+            local nimble_dir = ((nimble_dir_raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
+                :gsub("%c", "")
+                :gsub("%s", "")
             assert.are.equal("", nimble_dir, "plugin must not inject NIMBLE_DIR; got: " .. nimble_dir)
 
             -- Defensive corollary: with no NIMBLE_DIR injected, nimble's default dir

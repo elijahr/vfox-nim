@@ -39,6 +39,23 @@ function PLUGIN:PostInstall(ctx)
     local is_windows = utils.is_windows()
     local nim_ext = is_windows and ".exe" or ""
 
+    -- Convert a path to a cmd.exe-compatible form on Windows. The SDK install path
+    -- (`path`) is a NATIVE backslash path on Windows, but the plugin composes binary
+    -- paths by appending forward-slash segments (e.g. path .. "/bin/nim" .. nim_ext),
+    -- yielding a MIXED-separator path like `D:\a\...\nim-2.2.4/bin/nim.exe`. When such
+    -- a path is quoted and handed to cmd.exe (every exec on Windows spawns cmd.exe),
+    -- cmd.exe treats the forward slashes as switch characters and rejects the command
+    -- ("is not recognized as an internal or external command"), failing the install.
+    -- Collapse every "/" to "\" on the FINAL composed string used in a Windows exec.
+    -- No-op on macOS/Linux (is_windows() is false; Unix paths have no backslashes), so
+    -- existing Unix behavior is preserved byte-for-byte.
+    local function native_path(p)
+        if is_windows then
+            return (p:gsub("/", "\\"))
+        end
+        return p
+    end
+
     -- Check if we need to restructure the archive
     -- mise: extracts to /path/to/install -> need to move nim-VERSION/* up
     -- vfox: extracts to /path/to/nim-VERSION -> files are already in place
@@ -93,7 +110,7 @@ function PLUGIN:PostInstall(ctx)
         if is_windows and file_exists(path .. "/finish.exe") then
             print("Running Windows post-install setup (finish.exe)...")
             print("This will configure PATH and check for C compiler (MinGW)")
-            local success, _ = exec('"' .. path .. '\\finish.exe"')
+            local success, _ = exec('"' .. native_path(path .. "/finish.exe") .. '"')
             if not success then
                 print("Warning: finish.exe failed, but this is not critical")
                 print("You may need to manually install MinGW for compiling Nim code")
@@ -107,8 +124,10 @@ function PLUGIN:PostInstall(ctx)
         error("Nim binary not found at " .. nim_binary .. ". Installation may have failed.")
     end
 
-    -- Test version
-    local success, output = exec('"' .. nim_binary .. '" --version')
+    -- Test version. nim_binary is composed with "/" but `path` is a native backslash
+    -- path on Windows; native_path() collapses it to all-backslash so the quoted path
+    -- handed to cmd.exe is valid (mixed separators are rejected by cmd.exe).
+    local success, output = exec('"' .. native_path(nim_binary) .. '" --version')
     if not success or not output:match("Nim Compiler") then
         error("Nim installation verification failed. Output: " .. (output or "none"))
     end
@@ -126,6 +145,16 @@ build_from_source = function(install_path, is_windows, nim_ext) -- luacheck: no 
             return true
         end
         return false
+    end
+
+    -- See PostInstall's native_path: collapse "/" to "\" for paths embedded in
+    -- Windows exec'd commands (cmd.exe rejects mixed/forward-slash quoted paths).
+    -- No-op on Unix. Applied to the FINAL composed path strings only.
+    local function native_path(p)
+        if is_windows then
+            return (p:gsub("/", "\\"))
+        end
+        return p
     end
 
     local function exec_or_error(cmd, error_msg, quiet)
@@ -170,7 +199,10 @@ nim_csourcesHash=86742fb02c6606ab01a532a0085784effb2e753e
 
     -- Bootstrap nim
     if is_windows then
-        exec_or_error('cd "' .. install_path .. '" && .\\build_all.bat', "Failed to build Nim (build_all.bat)")
+        exec_or_error(
+            'cd "' .. native_path(install_path) .. '" && .\\build_all.bat',
+            "Failed to build Nim (build_all.bat)"
+        )
     else
         exec_or_error('cd "' .. install_path .. '" && sh build_all.sh', "Failed to build Nim (build_all.sh)")
     end
@@ -178,10 +210,10 @@ nim_csourcesHash=86742fb02c6606ab01a532a0085784effb2e753e
     -- Build koch if needed
     if not file_exists(install_path .. "/koch" .. nim_ext) then
         print("Building koch build tool...")
-        local nim = install_path .. "/bin/nim" .. nim_ext
+        local nim = native_path(install_path .. "/bin/nim" .. nim_ext)
         exec_or_error(
             'cd "'
-                .. install_path
+                .. native_path(install_path)
                 .. '" && "'
                 .. nim
                 .. '" c --skipParentCfg:on -d:release koch'
@@ -191,12 +223,15 @@ nim_csourcesHash=86742fb02c6606ab01a532a0085784effb2e753e
         )
     end
 
-    -- Build nim with koch
-    local koch = install_path .. "/koch" .. nim_ext
-    if file_exists(koch) then
+    -- Build nim with koch. The file_exists check uses the "/"-composed path (it runs
+    -- through Lua io.open, which accepts forward slashes on Windows); only the koch
+    -- path embedded in the exec'd command needs the native-backslash form for cmd.exe.
+    local koch_path = install_path .. "/koch" .. nim_ext
+    local koch = native_path(koch_path)
+    if file_exists(koch_path) then
         print("Building Nim with koch...")
         exec_or_error(
-            'cd "' .. install_path .. '" && "' .. koch .. '" boot -d:release',
+            'cd "' .. native_path(install_path) .. '" && "' .. koch .. '" boot -d:release',
             "Failed to boot Nim with koch",
             true
         )
@@ -205,7 +240,7 @@ nim_csourcesHash=86742fb02c6606ab01a532a0085784effb2e753e
         print("Building Nim tools...")
         if not file_exists(install_path .. "/bin/nimgrep" .. nim_ext) then
             exec_or_error(
-                'cd "' .. install_path .. '" && "' .. koch .. '" tools -d:release',
+                'cd "' .. native_path(install_path) .. '" && "' .. koch .. '" tools -d:release',
                 "Failed to build tools",
                 true
             )
@@ -215,7 +250,7 @@ nim_csourcesHash=86742fb02c6606ab01a532a0085784effb2e753e
         print("Building nimble package manager...")
         if not file_exists(install_path .. "/bin/nimble" .. nim_ext) then
             -- Try nimble build, but don't fail if it doesn't work (some versions don't have this)
-            os.execute('cd "' .. install_path .. '" && "' .. koch .. '" nimble -d:release 2>/dev/null')
+            os.execute('cd "' .. native_path(install_path) .. '" && "' .. koch .. '" nimble -d:release 2>/dev/null')
         end
     end
 
