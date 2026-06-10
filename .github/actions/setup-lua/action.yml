@@ -101,6 +101,10 @@ runs:
       with:
         msystem: MINGW64
         update: true
+        # inherit the Windows PATH so tools installed by other steps (e.g. mise via
+        # jdx/mise-action) resolve inside `msys2 {0}` steps. MSYS2/MINGW64 dirs stay
+        # first, so /mingw64/bin busted/lua5.1 still take precedence.
+        path-type: inherit
         install: >-
           mingw-w64-x86_64-lua51
           mingw-w64-x86_64-lua-luarocks
