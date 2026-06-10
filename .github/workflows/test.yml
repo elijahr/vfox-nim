@@ -96,9 +96,11 @@ jobs:
       - name: Run Lua unit tests (Windows)
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
+        # cd into the workspace (the msys2 shell starts in the MSYS2 home), and pass
+        # `spec` WITHOUT a trailing slash: on Windows lfs.attributes("spec/") returns
+        # nil, so busted's file discovery fails on the trailing-slash form.
         run: |
           cd "$(cygpath -u "$GITHUB_WORKSPACE")"
-          lua5.1 -e 'local ok,lfs=pcall(require,"lfs"); io.write("lfs_loaded=",tostring(ok),"\n"); if ok then io.write("spec=",tostring(lfs.attributes("spec","mode"))," spec/=",tostring(lfs.attributes("spec/","mode")),"\n") end'
           busted spec -v
 
   # Test mise integration (with integration test script)

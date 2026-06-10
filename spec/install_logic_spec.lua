@@ -249,7 +249,16 @@ describe("OS detection (is_macos/is_windows)", function()
                 end,
             }
         end
-        assert.equals(true, utils.is_macos())
+        if package.config:sub(1, 1) == "\\" then
+            -- On a real Windows host, is_windows()'s package.config path-separator
+            -- check correctly wins over the stubbed uname (you cannot fake a macOS
+            -- host out from under package.config), so the macOS uname-fallback is
+            -- unreachable and is_macos() is correctly false. The Darwin uname path is
+            -- exercised on non-Windows hosts (the else branch).
+            assert.equals(false, utils.is_macos())
+        else
+            assert.equals(true, utils.is_macos())
+        end
     end)
 end)
 
