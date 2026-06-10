@@ -22,3 +22,8 @@ Thumbs.db
 
 # Local tool-version artifact created by integration test runs
 /.vfox.toml
+
+# Temp spawn scripts written by the Windows integration-test runner
+# (test/{vfox,mise}-integration_spec.lua write ./.vfox-spawn-<time>-<n>.sh and
+# remove them, but an interrupted run could leave one behind).
+/.vfox-spawn-*.sh

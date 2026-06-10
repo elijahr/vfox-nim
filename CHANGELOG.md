@@ -30,17 +30,24 @@ _Not yet released — the `v0.1.0` tag is created by CI on merge to the default 
 - CI Lua toolchain root-fix: provision a dlopen-capable Lua 5.1-ABI interpreter +
   luarocks + busted via a `setup-lua` composite action (PUC Lua 5.1 via hererocks on
   Linux/macOS — LuaJIT is intentionally avoided there due to its 65536-constant limit
-  on the luarocks manifest; MSYS2-native LuaJIT on Windows), replacing the
-  static-no-dlopen interpreter and the broken `withLuaPath` luarocks step across all
-  three test jobs.
+  on the luarocks manifest; MSYS2-native PUC Lua 5.1 (`mingw-w64-x86_64-lua51`) on
+  Windows), replacing the static-no-dlopen interpreter and the broken `withLuaPath`
+  luarocks step across all three test jobs.
 - `adjust_date` now uses pure-integer civil-day arithmetic (no `date` shell-out),
   fixing the Windows date-offset failure and removing timezone/DST dependence.
 - Hardened `is_windows`/`is_macos` to derive the OS from `RUNTIME.osType`.
 - Integration spec uses `os.tmpname()` for its archive path (collision/`act` safety).
+- Windows: `vfox install nim` failed in `post_install.lua` two ways — exec'd command
+  paths mixed `/` and `\` separators (cmd.exe rejected them), and the install was
+  verified by a shell-quoted `nim --version` that cmd.exe (vfox) and POSIX sh (mise)
+  can't both parse. Fixed by composing native (backslash) paths on Windows and
+  verifying the binary by file existence; the version check still runs on Unix.
 - Windows: cmd.exe leading-quote mangling in `post_install.lua` — when an exec'd
   command started with a quoted path (e.g. `"…\nim.exe" --version`), cmd.exe's
   quote-stripping broke the command under vfox. Fixed by wrapping the whole command
   in an extra outer quote pair on Windows only (Unix form unchanged).
+- Windows: use `2>nul` (not `2>/dev/null`) for stderr suppression on cmd.exe-reachable
+  command sites, so they don't print a stray "system cannot find" message.
 - Documented the durable local dev loop (LuaJIT + luarocks tree + busted/luacheck),
   the `mise trust` requirement, and how to make `luacheck` available for pre-commit.
 
@@ -48,12 +55,11 @@ _Not yet released — the `v0.1.0` tag is created by CI on merge to the default 
 
 - Windows: the source-build install method is not supported (the prebuilt binary
   install is used instead); `auto` correctly selects the binary on Windows. The
-  explicit `VFOX_NIM_INSTALL_METHOD=source` integration test is skipped (pending) on
-  Windows and still runs on macOS/Linux.
-- Windows CI: pending (deferred — non-blocking matrix leg). The 3-OS matrix retains
-  the windows-latest legs (composite-action MSYS2 branch written), but they are
-  marked `continue-on-error` (non-blocking) this release; a green Windows CI run is a
-  follow-up before the Windows leg is re-enabled as blocking.
+  explicit `VFOX_NIM_INSTALL_METHOD=source` integration test is skipped on Windows and
+  still runs on macOS/Linux.
+- Windows CI: the full 3-OS matrix — unit tests plus the mise and vfox integration
+  suites (a real `nim` install end-to-end) — passes on `ubuntu-latest`, `macos-latest`,
+  and `windows-latest`, and the Windows legs are blocking (not `continue-on-error`).
 
 [Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/elijahr/vfox-nim/commits/main
+[0.1.0]: https://github.com/elijahr/vfox-nim/releases/tag/v0.1.0
