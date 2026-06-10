@@ -31,11 +31,12 @@ end
 
 -- Ambient variables that leak the developer's GLOBALLY-active mise/nim toolchain
 -- into the vfox sandbox and break hermeticity. mise's shell activation exports
--- these into every interactive shell (and thus into the busted process). In
--- particular an inherited NIMBLE_DIR is honored by hooks/env_keys.lua Priority 1
--- ("respect existing NIMBLE_DIR"), so without scrubbing, the activated vfox nim
--- would still report the developer's global NIMBLE_DIR (e.g. nim/2.2.10/nimble)
--- and nimble would compile against the global nim instead of the sandbox nim@2.2.4.
+-- these into every interactive shell (and thus into the busted process). The
+-- plugin no longer sets NIMBLE_DIR (it lets nim use the shared ~/.nimble), but a
+-- developer's inherited NIMBLE_DIR persists through activation unchanged, so
+-- without scrubbing the activated vfox nim would still report the developer's
+-- global NIMBLE_DIR (e.g. nim/2.2.10/nimble) and nimble would resolve packages
+-- against that global dir instead of the clean sandbox default.
 local SCRUBBED_ENV_VARS = {
     "NIMBLE_DIR",
     "MISE_SHELL",
@@ -152,7 +153,7 @@ end
 -- Run a shell command with nim@2.2.4 activated via a project-local .tool-versions
 -- file. This is vfox's reliable, hermetic activation path: inside a directory that
 -- declares `nim 2.2.4`, `eval "$(vfox activate bash)"` materializes a per-project
--- .vfox/sdks/nim symlink, prepends its bin to PATH, and exports NIMBLE_DIR. (Global
+-- .vfox/sdks/nim symlink and prepends its bin to PATH. (Global
 -- `vfox use -g` activation does NOT take effect in a non-interactive `bash -c`
 -- subshell — it needs a persistent shell hook session — so we never rely on it.)
 -- The `inner` string runs after activation, with cwd at the project dir.
@@ -344,25 +345,23 @@ describe("vfox Plugin Integration Tests", function()
     end)
 
     describe("Environment Variables", function()
-        it("should set NIMBLE_DIR to the activated per-project nimble directory", function()
-            local nimble_dir, success, proj = exec_with_nim('echo "NIMBLE_DIR=$NIMBLE_DIR"')
+        it("does not inject NIMBLE_DIR on activation (nim uses the shared ~/.nimble)", function()
+            -- The plugin intentionally no longer sets NIMBLE_DIR (it previously set a
+            -- per-version <sdk>/nimble path inherited from asdf-nim, which polluted the
+            -- managed install dir and lost packages on reinstall). Leaving it unset means
+            -- nim uses the shared ~/.nimble, a user-set NIMBLE_DIR persists, and
+            -- project-local nimbledeps auto-detection still works.
+            --
+            -- The harness scrubs the developer's ambient NIMBLE_DIR for every command,
+            -- so under `vfox activate` the ONLY thing that could set $NIMBLE_DIR is the
+            -- plugin's env_keys. Assert it stays empty.
+            local nimble_dir, success = exec_with_nim('echo "NIMBLE_DIR=[$NIMBLE_DIR]"')
             assert.is_true(success, "activation failed: " .. nimble_dir)
-            nimble_dir = nimble_dir:gsub("%s+$", ""):match("NIMBLE_DIR=([^\n]*)")
-            assert.is_truthy(nimble_dir and nimble_dir ~= "", "NIMBLE_DIR was not set by activation")
-
-            -- env_keys.lua sets NIMBLE_DIR = <sdk>/nimble. `vfox activate` materializes a
-            -- project-local .vfox/sdks/nim symlink rooted at the activated project dir
-            -- (`proj`), so NIMBLE_DIR must live inside that per-project tmp dir. Pinning to
-            -- `proj` (mirroring the mise spec's MISE_TEST_DIR pin) ensures a stale real
-            -- ~/.vfox path or the developer's global NIMBLE_DIR cannot satisfy the suffix
-            -- check below.
-            assert.is_truthy(
-                nimble_dir:find(proj, 1, true),
-                "NIMBLE_DIR must be inside the activated project dir (" .. proj .. "): got " .. nimble_dir
-            )
-            assert.is_truthy(
-                nimble_dir:find("/.vfox/sdks/nim/nimble", 1, true),
-                "NIMBLE_DIR is not the activated vfox sdk nimble dir: " .. nimble_dir
+            nimble_dir = nimble_dir:gsub("%s+$", ""):match("NIMBLE_DIR=%[([^%]]*)%]")
+            assert.are.equal(
+                "",
+                nimble_dir or "",
+                "plugin must not inject NIMBLE_DIR on activation; got: " .. tostring(nimble_dir)
             )
         end)
     end)
@@ -390,11 +389,12 @@ describe("vfox Plugin Integration Tests", function()
     end)
 
     describe("Nimble Package Manager", function()
-        it("should install a nimble package into the activated sdk", function()
+        it("should install a nimble package using the activated toolchain", function()
             -- Install argparse, then deterministically verify it is present via
             -- `nimble list --installed` (exit-code + name check) rather than scraping
             -- the non-deterministic install banner. Both run under the same activated
-            -- toolchain so NIMBLE_DIR points at the per-project vfox sdk.
+            -- nim@2.2.4 toolchain; the plugin does not inject NIMBLE_DIR, so nimble
+            -- resolves its default (shared ~/.nimble) dir.
             local inner = "nimble install -y argparse 2>&1 && nimble list --installed 2>&1"
             local output, success = exec_with_nim(inner)
 

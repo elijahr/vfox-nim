@@ -134,17 +134,63 @@ describe("vfox-nim smoke tests", function()
             assert.is_true(found_path, "Should set PATH")
         end)
 
-        it("sets NIMBLE_DIR when no local nimbledeps", function()
+        -- The plugin intentionally never sets NIMBLE_DIR (matching choosenim /
+        -- standard nimble): nim uses the shared ~/.nimble, a user-set NIMBLE_DIR
+        -- persists, and project-local nimbledeps auto-detection still fires. The
+        -- hook must therefore return PATH and NO NIMBLE_DIR entry under EVERY
+        -- ambient condition.
+        local function assert_no_nimble_dir(result)
+            local found_path = false
+            for _, env_var in ipairs(result) do
+                if env_var.key == "PATH" then
+                    found_path = true
+                end
+                assert.are_not.equal("NIMBLE_DIR", env_var.key, "env_keys must not set NIMBLE_DIR")
+            end
+            assert.is_true(found_path, "Should set PATH")
+        end
+
+        it("never sets NIMBLE_DIR when neither NIMBLE_DIR nor nimbledeps present", function()
+            -- before_each already mocks os.getenv to return nil for NIMBLE_DIR
+            -- and PWD = "/test/workdir" (no nimbledeps under it).
             dofile("hooks/env_keys.lua")
             local result = PLUGIN:EnvKeys(ctx)
+            assert_no_nimble_dir(result)
+        end)
 
-            local found_nimble_dir = false
-            for _, env_var in ipairs(result) do
-                if env_var.key == "NIMBLE_DIR" then
-                    found_nimble_dir = true
+        it("never sets NIMBLE_DIR when NIMBLE_DIR is already set in the environment", function()
+            _G.os.getenv = function(name)
+                if name == "NIMBLE_DIR" then
+                    return "/user/custom/nimble"
+                elseif name == "PWD" then
+                    return "/test/workdir"
                 end
+                return nil
             end
-            assert.is_true(found_nimble_dir, "Should set NIMBLE_DIR")
+
+            dofile("hooks/env_keys.lua")
+            local result = PLUGIN:EnvKeys(ctx)
+            assert_no_nimble_dir(result)
+        end)
+
+        it("never sets NIMBLE_DIR when a project-local nimbledeps exists", function()
+            -- Force io.open to report that <cwd>/nimbledeps exists.
+            local io_open_orig = _G.io.open
+            _G.io.open = function(filepath, mode)
+                if type(filepath) == "string" and filepath:find("nimbledeps", 1, true) then
+                    return io_open_orig("/dev/null", "r")
+                end
+                return io_open_orig(filepath, mode)
+            end
+
+            local ok, err = pcall(function()
+                dofile("hooks/env_keys.lua")
+                local result = PLUGIN:EnvKeys(ctx)
+                assert_no_nimble_dir(result)
+            end)
+
+            _G.io.open = io_open_orig
+            assert.is_true(ok, err)
         end)
     end)
 

@@ -148,6 +148,23 @@ mise install nim@2.0.0
 mise ls nim
 ```
 
+### Nimble package directory (`NIMBLE_DIR`)
+
+This plugin does **not** set `NIMBLE_DIR`. Nim therefore uses the shared
+`~/.nimble` directory, matching the behavior of
+[`choosenim`](https://github.com/nim-lang/choosenim) and a standard Nim install.
+Leaving it unset means:
+
+- A `NIMBLE_DIR` you set yourself (in your shell, `mise.toml` `[env]`, or CI) is
+  respected — the plugin never overrides it.
+- Nimble's project-local
+  [`nimbledeps`](https://nim-lang.github.io/nimble/workflow.html#nimbledeps)
+  auto-detection still works (it only activates when `NIMBLE_DIR` is unset).
+
+Earlier versions pinned `NIMBLE_DIR` to a per-version `<install>/nimble` path
+(inherited from `asdf-nim`). That polluted the managed install directory and lost
+installed packages whenever a Nim version was reinstalled; it is no longer done.
+
 ## Development
 
 ```bash

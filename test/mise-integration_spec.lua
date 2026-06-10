@@ -508,34 +508,32 @@ describe("Mise Plugin Integration Tests", function()
     end)
 
     describe("Environment Variables", function()
-        it("should set NIMBLE_DIR to the per-version sandbox directory", function()
+        it("does not inject NIMBLE_DIR (nim uses the shared ~/.nimble, like choosenim)", function()
+            -- The plugin intentionally no longer sets NIMBLE_DIR (it previously set a
+            -- per-version <install>/nimble path inherited from asdf-nim, which polluted
+            -- the managed install dir and lost packages on reinstall). Leaving it unset
+            -- means nim uses the shared ~/.nimble, a user-set NIMBLE_DIR persists, and
+            -- project-local nimbledeps auto-detection still works.
+            --
+            -- The harness scrubs the developer's ambient NIMBLE_DIR for every command,
+            -- so the ONLY way $NIMBLE_DIR could be non-empty under `mise exec nim@2.2.4`
+            -- is if the plugin's env_keys injected it. Assert it is empty.
             local nimble_dir = exec("mise exec nim@2.2.4 -- sh -c 'echo $NIMBLE_DIR' 2>&1"):gsub("%s+$", "")
             nimble_dir = nimble_dir:match("[^\n]*$")
+            assert.are.equal("", nimble_dir, "plugin must not inject NIMBLE_DIR; got: " .. nimble_dir)
 
-            -- env_keys.lua Priority 3 sets NIMBLE_DIR = <install>/nimble for the active
-            -- version. With the ambient developer NIMBLE_DIR scrubbed by the harness, this
-            -- must resolve to the sandbox-installed nim@2.2.4, isolating packages per
-            -- version. Assert the FULL expected path so a regression to the global nim or
-            -- a wrong version is caught.
+            -- Defensive corollary: with no NIMBLE_DIR injected, nimble's default dir
+            -- is the shared <HOME>/.nimble, which must live OUTSIDE the per-version
+            -- sandbox install dir (the directory the old plugin used to pin). Resolve
+            -- HOME and the install dir and assert they do not nest.
+            local home = exec("mise exec nim@2.2.4 -- sh -c 'echo $HOME' 2>&1"):gsub("%s+$", "")
+            home = home:match("[^\n]*$")
+            assert.is_truthy(home and home ~= "", "could not resolve HOME for default nimble dir check")
             local nim_path = exec("mise where nim@2.2.4 2>&1"):gsub("%s+$", "")
             nim_path = nim_path:match("[^\n]*$")
-            local expected = nim_path .. "/nimble"
-
-            -- On Windows, `mise where` and the plugin's env_keys compose mixed
-            -- separators (mise's native `\installs\...` + the plugin's `/nimble`).
-            -- The exact byte sequences can differ only in `\` vs `/`, which is not a
-            -- real divergence (both resolve identically for nim/nimble under mingw).
-            -- Normalize separators before comparing so the assertion stays strict on
-            -- the path STRUCTURE while tolerating separator form. No-op on Unix.
-            assert.are.equal(
-                normalize_sep(expected),
-                normalize_sep(nimble_dir),
-                "NIMBLE_DIR should be the sandbox per-version nimble dir"
-            )
-            -- Defensive: the resolved nim install itself must live inside the sandbox.
-            assert.is_truthy(
-                nim_path:find(MISE_TEST_DIR, 1, true),
-                "nim install not inside sandbox (" .. MISE_TEST_DIR .. "): " .. nim_path
+            assert.is_falsy(
+                normalize_sep(home):find(normalize_sep(nim_path), 1, true),
+                "HOME unexpectedly inside the per-version install dir: " .. home
             )
         end)
     end)
@@ -568,20 +566,31 @@ describe("Mise Plugin Integration Tests", function()
     end)
 
     describe("Nimble Package Manager", function()
-        it("should install a nimble package", function()
+        it("should install a nimble package into the default (shared) nimble dir", function()
+            -- Functional proof of the NIMBLE_DIR-unset behavior: with no plugin-injected
+            -- NIMBLE_DIR, the package installs into the default (shared) ~/.nimble and is
+            -- then resolvable there. Verify presence deterministically via
+            -- `nimble list --installed` (exit-code + name check) instead of scraping the
+            -- install banner: when the package is already present in the shared
+            -- ~/.nimble, `nimble install` prints nothing, so a banner-scrape would be a
+            -- false negative. The old per-version NIMBLE_DIR masked this by always
+            -- starting from an empty per-version dir.
             local test_dir = make_temp_dir()
             raw_execute("mkdir -p '" .. test_dir .. "'")
 
-            local output, success =
-                exec("cd '" .. test_dir .. "' && echo 'y' | mise exec nim@2.2.4 -- nimble install -y argparse 2>&1")
+            local output, success = exec(
+                "cd '"
+                    .. test_dir
+                    .. "' && mise exec nim@2.2.4 -- nimble install -y argparse 2>&1 && "
+                    .. "mise exec nim@2.2.4 -- nimble list --installed 2>&1"
+            )
             raw_execute("rm -rf '" .. test_dir .. "'")
 
-            assert.is_true(success, "nimble install failed: " .. output)
-            local lower_output = output:lower()
-            local has_success_msg = (lower_output:match("success") ~= nil)
-                or (lower_output:match("installed") ~= nil)
-                or (lower_output:match("already") ~= nil)
-            assert.is_true(has_success_msg, "nimble install didn't show expected success message. Output: " .. output)
+            assert.is_true(success, "nimble install/list failed: " .. output)
+            assert.is_truthy(
+                output:lower():find("argparse", 1, true),
+                "argparse not reported as installed in the default nimble dir. Output: " .. output
+            )
         end)
     end)
 

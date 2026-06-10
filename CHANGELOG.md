@@ -10,6 +10,14 @@ All notable changes to vfox-nim are documented here. Format follows
 
 _Not yet released — the `v0.1.0` tag is created by CI on merge to the default branch._
 
+### Changed
+
+- No longer set `NIMBLE_DIR` to a per-version `<install>/nimble` path (inherited
+  from `asdf-nim`). It is now left unset so nim uses the shared `~/.nimble`
+  (matching `choosenim`), preventing package loss on version reinstall and keeping
+  nimble packages out of the managed install directory. A user-set `NIMBLE_DIR` and
+  project-local `nimbledeps` auto-detection are both still honored.
+
 ### Added
 
 - Initial release: 4-level Nim installer (official binaries → exact nightly →
