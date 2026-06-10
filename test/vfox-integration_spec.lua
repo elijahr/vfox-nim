@@ -13,6 +13,18 @@ local function setenv(name, value)
     env_vars[name] = value
 end
 
+-- os.tmpname() on Windows returns a bare leaf like "\s5a2." rooted at the drive's
+-- current dir, not an absolute path under TEMP. Prefix it with %TEMP% so the path is
+-- usable. On Unix os.tmpname() returns a "/"-rooted absolute path, so the backslash
+-- check fails and this is a no-op.
+local function tmpname()
+    local name = os.tmpname()
+    if name:sub(1, 1) == "\\" and os.getenv("TEMP") then
+        name = os.getenv("TEMP") .. name
+    end
+    return name
+end
+
 -- Ambient variables that leak the developer's GLOBALLY-active mise/nim toolchain
 -- into the vfox sandbox and break hermeticity. mise's shell activation exports
 -- these into every interactive shell (and thus into the busted process). In
@@ -85,6 +97,13 @@ local function exec(cmd)
     -- Wrap the (possibly compound) command in a group so $? reflects its exit
     -- status before the trailing 2>&1 redirect is applied.
     local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
+    -- On Windows, io.popen runs through cmd.exe which cannot interpret the POSIX
+    -- shell builtins used above (unset/export/{ ...; }/printf). Re-wrap in `bash -c`
+    -- so msys/git-bash interprets the command. On Unix this branch is skipped, so
+    -- behavior is identical (the command already runs through /bin/sh).
+    if package.config:sub(1, 1) == "\\" then
+        full_cmd = "bash -c '" .. full_cmd:gsub("'", "'\\''") .. "'"
+    end
     local handle = io.popen(full_cmd .. " 2>&1")
     local result = handle:read("*a")
     handle:close()
@@ -134,9 +153,9 @@ end
 -- subshell — it needs a persistent shell hook session — so we never rely on it.)
 -- The `inner` string runs after activation, with cwd at the project dir.
 local function exec_with_nim(inner)
-    local proj = os.tmpname()
+    local proj = tmpname()
     os.remove(proj)
-    os.execute("mkdir -p '" .. proj .. "'")
+    exec("mkdir -p '" .. proj .. "'")
     local f = io.open(proj .. "/.tool-versions", "w")
     f:write("nim 2.2.4\n")
     f:close()
@@ -144,7 +163,7 @@ local function exec_with_nim(inner)
     local script = 'cd "' .. proj .. '" && eval "$(vfox activate bash)" && ' .. inner
     local output, success = exec("bash -c '" .. script:gsub("'", "'\\''") .. "'")
 
-    os.execute("rm -rf '" .. proj .. "'")
+    exec("rm -rf '" .. proj .. "'")
     return output, success, proj
 end
 
@@ -175,12 +194,12 @@ describe("vfox Plugin Integration Tests", function()
     -- `shell: 'msys2 {0}'`, where a backslashed path is fragile and may need backslash->forward-slash
     -- normalization before interpolation. The integration tier is [CI-ONLY] on Windows (design
     -- §3.3); this caveat is validated by the first Windows integration CI run, not locally.
-    local zip_path = os.tmpname() .. "-vfox-nim-test.zip"
+    local zip_path = tmpname() .. "-vfox-nim-test.zip"
 
     -- Sandbox vfox home so installs, plugins, and `vfox use -g` writes are fully
     -- contained and never touch the developer's real ~/.vfox. VFOX_HOME is vfox's
     -- documented home-directory override.
-    local VFOX_TEST_HOME = os.tmpname():gsub("%.%w+$", "") .. ".vfox-nim-test-home"
+    local VFOX_TEST_HOME = tmpname():gsub("%.%w+$", "") .. ".vfox-nim-test-home"
 
     -- Setup runs once before all tests
     setup(function()
@@ -198,7 +217,7 @@ describe("vfox Plugin Integration Tests", function()
 
         -- Create and activate the sandbox vfox home BEFORE any vfox invocation so
         -- every command below is hermetic.
-        os.execute("mkdir -p '" .. VFOX_TEST_HOME .. "'")
+        exec("mkdir -p '" .. VFOX_TEST_HOME .. "'")
         setenv("VFOX_HOME", VFOX_TEST_HOME)
         print("✓ Sandboxed vfox home: " .. VFOX_TEST_HOME)
 
@@ -209,16 +228,16 @@ describe("vfox Plugin Integration Tests", function()
         -- Add the plugin using git archive. All vfox calls carry build_env_prefix()
         -- so they target the sandbox VFOX_HOME, not the developer's real ~/.vfox.
         print("\n→ Adding plugin for local testing...")
-        os.execute(build_env_prefix() .. "vfox remove -y nim 2>/dev/null || true")
+        exec("vfox remove -y nim 2>/dev/null || true")
 
         -- Create a zip archive of the current repository (zip_path is the describe-scoped local)
-        local archive_result =
-            os.execute("cd '" .. PLUGIN_DIR .. "' && git archive --format=zip --output='" .. zip_path .. "' HEAD")
-        assert(archive_result == true or archive_result == 0, "Failed to create git archive")
+        local _, archive_ok =
+            exec("cd '" .. PLUGIN_DIR .. "' && git archive --format=zip --output='" .. zip_path .. "' HEAD")
+        assert(archive_ok, "Failed to create git archive")
 
         -- Add the plugin from the zip file
-        local add_result = os.execute(build_env_prefix() .. "vfox add --source '" .. zip_path .. "' --alias nim 2>&1")
-        assert(add_result == true or add_result == 0, "Failed to add plugin from zip")
+        local _, add_ok = exec("vfox add --source '" .. zip_path .. "' --alias nim 2>&1")
+        assert(add_ok, "Failed to add plugin from zip")
 
         print("✓ Plugin added from local zip\n")
     end)
@@ -230,14 +249,14 @@ describe("vfox Plugin Integration Tests", function()
         print("========================================\n")
 
         print("→ Removing plugin...")
-        os.execute(build_env_prefix() .. "vfox remove -y nim 2>/dev/null || true")
+        exec("vfox remove -y nim 2>/dev/null || true")
 
         -- Remove the zip file if it exists (portable; removes exactly the file setup created)
         os.remove(zip_path)
 
         -- Remove the entire sandbox vfox home so nothing persists between runs.
         if VFOX_TEST_HOME ~= "" and dir_exists(VFOX_TEST_HOME) then
-            os.execute("rm -rf '" .. VFOX_TEST_HOME .. "'")
+            exec("rm -rf '" .. VFOX_TEST_HOME .. "'")
         end
 
         print("✓ Plugin removed and sandbox home cleaned")
@@ -349,9 +368,9 @@ describe("vfox Plugin Integration Tests", function()
             -- Create a project dir that declares nim 2.2.4 via .tool-versions, then ask
             -- vfox which version it considers current there. This verifies real
             -- .tool-versions recognition rather than merely that the file was written.
-            local test_dir = os.tmpname()
+            local test_dir = tmpname()
             os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+            exec("mkdir -p '" .. test_dir .. "'")
             local f = io.open(test_dir .. "/.tool-versions", "w")
             f:write("nim 2.2.4\n")
             f:close()
@@ -359,7 +378,7 @@ describe("vfox Plugin Integration Tests", function()
             local output, success =
                 exec("bash -c 'cd \"" .. test_dir .. '" && eval "$(vfox activate bash)" && vfox current nim\'')
 
-            os.execute("rm -rf '" .. test_dir .. "'")
+            exec("rm -rf '" .. test_dir .. "'")
 
             assert.is_true(success, "vfox current nim failed in .tool-versions dir: " .. output)
             assert.matches("2%.2%.4", output, "vfox did not report nim 2.2.4 as current for the .tool-versions dir")
@@ -400,7 +419,7 @@ describe("vfox Plugin Integration Tests", function()
 
     describe("Install Methods", function()
         it("should install with VFOX_NIM_INSTALL_METHOD='auto'", function()
-            os.execute(build_env_prefix() .. "echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
+            exec("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
             setenv("VFOX_NIM_INSTALL_METHOD", "auto")
             local output, success = exec("vfox install --yes nim@2.2.4 2>&1")
@@ -414,7 +433,7 @@ describe("vfox Plugin Integration Tests", function()
 
         it("should install with VFOX_NIM_INSTALL_METHOD='source'", function()
             -- Note: This test can be very slow as it builds from source
-            os.execute(build_env_prefix() .. "echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
+            exec("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
             setenv("VFOX_NIM_INSTALL_METHOD", "source")
             local output, success = exec("vfox install --yes nim@2.2.4 2>&1")

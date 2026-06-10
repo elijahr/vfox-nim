@@ -87,6 +87,13 @@ local function exec(cmd)
     -- Wrap the (possibly compound) command in a group so $? reflects its exit
     -- status before the trailing 2>&1 redirect is applied.
     local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
+    -- On Windows, io.popen runs through cmd.exe which cannot interpret the POSIX
+    -- shell builtins used above (unset/export/{ ...; }/printf). Re-wrap in `bash -c`
+    -- so msys/git-bash interprets the command. On Unix this branch is skipped, so
+    -- behavior is identical (the command already runs through /bin/sh).
+    if package.config:sub(1, 1) == "\\" then
+        full_cmd = "bash -c '" .. full_cmd:gsub("'", "'\\''") .. "'"
+    end
     local handle = io.popen(full_cmd .. " 2>&1")
     local result = handle:read("*a")
     handle:close()
@@ -193,8 +200,8 @@ describe("Mise Plugin Integration Tests", function()
 
         -- Link the plugin
         print("\n→ Linking plugin for local testing...")
-        os.execute(build_env_prefix() .. "mise plugin uninstall nim 2>/dev/null || true")
-        os.execute(build_env_prefix() .. "mise plugin link nim '" .. PLUGIN_DIR .. "'")
+        exec("mise plugin uninstall nim 2>/dev/null || true")
+        exec("mise plugin link nim '" .. PLUGIN_DIR .. "'")
         print("✓ Plugin linked from local path\n")
     end)
 
@@ -205,7 +212,7 @@ describe("Mise Plugin Integration Tests", function()
         print("========================================\n")
 
         print("→ Unlinking plugin...")
-        os.execute(build_env_prefix() .. "mise plugin uninstall nim 2>/dev/null || true")
+        exec("mise plugin uninstall nim 2>/dev/null || true")
         print("✓ Plugin unlinked")
 
         if MISE_TEST_DIR ~= "" and dir_exists(MISE_TEST_DIR) then

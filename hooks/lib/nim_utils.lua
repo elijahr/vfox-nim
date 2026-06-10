@@ -99,6 +99,11 @@ function M.is_windows()
     if os.getenv("OS") == "Windows_NT" then
         return true
     end
+    -- package.config's first char is the platform path separator: "\\" on Windows,
+    -- "/" on Unix. This detects Windows without a uname shell-out and is a no-op on Unix.
+    if package and package.config and package.config:sub(1, 1) == "\\" then
+        return true
+    end
     local handle = io.popen("uname 2>/dev/null")
     if not handle then
         return false
@@ -112,6 +117,11 @@ function M.is_macos()
     if RUNTIME and RUNTIME.osType then
         local t = RUNTIME.osType:lower()
         return t:match("darwin") ~= nil or t:match("macos") ~= nil
+    end
+    -- Windows is never macOS; short-circuit before the uname shell-out. On Unix
+    -- is_windows()'s package.config check is "/" so this is a no-op.
+    if M.is_windows() then
+        return false
     end
     local handle = io.popen("uname 2>/dev/null")
     if not handle then
@@ -155,7 +165,7 @@ function M.url_exists(url)
         headers = M.get_github_headers()
     end
     local resp, err = http.head({ url = url, headers = headers })
-    if err ~= nil then
+    if err ~= nil or not resp then
         return false
     end
     return resp.status_code == 200 or resp.status_code == 302
