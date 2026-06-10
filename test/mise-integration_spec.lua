@@ -3,7 +3,58 @@
 -- Run with: busted test/mise-integration_spec.lua
 
 -- Test environment setup
-local MISE_TEST_DIR = os.tmpname():gsub("%.%w+$", "") .. ".mise-nim-test"
+local IS_WINDOWS = package.config:sub(1, 1) == "\\"
+
+-- On Windows (msys2's native-Windows Lua), os.execute/io.popen spawn cmd.exe,
+-- which cannot interpret the POSIX shell builtins this spec emits (unset/export/
+-- $PATH/command -v/mkdir -p/rm -rf/{ ...; }/printf). Wrap every spawned command
+-- in `bash -c '...'` so msys/git-bash interprets it. On Unix the command already
+-- runs through /bin/sh, so this is a no-op and macOS behavior is unchanged.
+local function wrap_for_shell(cmd)
+    if IS_WINDOWS then
+        return "bash -c '" .. cmd:gsub("'", "'\\''") .. "'"
+    end
+    return cmd
+end
+
+-- Run a POSIX command via os.execute, routing through bash on Windows. Returns
+-- the raw os.execute results so callers can interpret exit status themselves.
+local function raw_execute(cmd)
+    return os.execute(wrap_for_shell(cmd))
+end
+
+-- Compute the base temp directory for the sandbox. os.tmpname() returns native
+-- Windows names (e.g. \s7uk.) that are unusable as POSIX paths / MISE_DATA_DIR,
+-- so on Windows we derive a clean, unique POSIX directory via `mktemp -d` run
+-- through the bash wrapper. On non-Windows we keep the existing os.tmpname()
+-- approach so macOS/Linux behavior is byte-for-byte identical.
+local function make_test_base_dir()
+    if IS_WINDOWS then
+        local handle = io.popen(wrap_for_shell("mktemp -d") .. " 2>&1")
+        local dir = handle:read("*a")
+        handle:close()
+        dir = (dir or ""):gsub("%s+$", "")
+        return dir .. "/mise-nim-test"
+    end
+    return os.tmpname():gsub("%.%w+$", "") .. ".mise-nim-test"
+end
+
+-- Create a unique per-test temp directory and return its POSIX path. On Windows
+-- this uses `mktemp -d` (os.tmpname() yields unusable native paths); on Unix it
+-- preserves the os.tmpname()-based approach.
+local function make_temp_dir()
+    if IS_WINDOWS then
+        local handle = io.popen(wrap_for_shell("mktemp -d") .. " 2>&1")
+        local dir = handle:read("*a")
+        handle:close()
+        return (dir or ""):gsub("%s+$", "")
+    end
+    local dir = os.tmpname()
+    os.remove(dir)
+    return dir
+end
+
+local MISE_TEST_DIR = make_test_base_dir()
 local SCRIPT_DIR = debug.getinfo(1, "S").source:sub(2):match("(.*/)")
 local PLUGIN_DIR = SCRIPT_DIR .. ".."
 
@@ -73,7 +124,7 @@ local function build_env_prefix()
     -- PREPEND the msys2 dirs to the INHERITED PATH so busted's lua5.1, msys
     -- coreutils, and the inherited mise.exe all resolve. On non-Windows we keep
     -- the hardcoded SANITIZED_PATH unchanged to preserve macOS/Linux hermeticity.
-    if package.config:sub(1, 1) == "\\" then
+    if IS_WINDOWS then
         table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
     else
         table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
@@ -101,12 +152,10 @@ local function exec(cmd)
     -- status before the trailing 2>&1 redirect is applied.
     local full_cmd = build_env_prefix() .. "{ " .. cmd .. "; }; printf '" .. EXIT_MARKER .. '%d\' "$?"'
     -- On Windows, io.popen runs through cmd.exe which cannot interpret the POSIX
-    -- shell builtins used above (unset/export/{ ...; }/printf). Re-wrap in `bash -c`
-    -- so msys/git-bash interprets the command. On Unix this branch is skipped, so
-    -- behavior is identical (the command already runs through /bin/sh).
-    if package.config:sub(1, 1) == "\\" then
-        full_cmd = "bash -c '" .. full_cmd:gsub("'", "'\\''") .. "'"
-    end
+    -- shell builtins used above (unset/export/{ ...; }/printf). wrap_for_shell
+    -- re-wraps in `bash -c` so msys/git-bash interprets the command. On Unix this
+    -- is a no-op, so behavior is identical (the command already runs through /bin/sh).
+    full_cmd = wrap_for_shell(full_cmd)
     local handle = io.popen(full_cmd .. " 2>&1")
     local result = handle:read("*a")
     handle:close()
@@ -122,8 +171,11 @@ local function exec(cmd)
 end
 
 local function exec_status(cmd)
-    local full_cmd = build_env_prefix() .. cmd
-    local result, _, exit_code = os.execute(full_cmd .. " >/dev/null 2>&1")
+    -- Compose the POSIX prefix + command, then route through bash on Windows so
+    -- the builtins (unset/export/command -v/test/etc.) are interpreted by msys
+    -- rather than cmd.exe. On Unix wrap_for_shell is a no-op (runs via /bin/sh).
+    local full_cmd = wrap_for_shell(build_env_prefix() .. cmd .. " >/dev/null 2>&1")
+    local result, _, exit_code = os.execute(full_cmd)
     -- Lua 5.1 returns exit code as number
     -- Lua 5.2+ returns true/nil, "exit", code
     if type(result) == "number" then
@@ -179,7 +231,7 @@ describe("Mise Plugin Integration Tests", function()
         print("========================================\n")
 
         -- Create sandboxed mise directories
-        os.execute(
+        raw_execute(
             "mkdir -p '" .. MISE_TEST_DIR .. "/data' '" .. MISE_TEST_DIR .. "/cache' '" .. MISE_TEST_DIR .. "/config'"
         )
 
@@ -230,7 +282,7 @@ describe("Mise Plugin Integration Tests", function()
 
         if MISE_TEST_DIR ~= "" and dir_exists(MISE_TEST_DIR) then
             print("→ Cleaning up temporary directory...")
-            os.execute("rm -rf '" .. MISE_TEST_DIR .. "'")
+            raw_execute("rm -rf '" .. MISE_TEST_DIR .. "'")
             print("✓ Temporary directory removed")
         end
     end)
@@ -320,16 +372,15 @@ describe("Mise Plugin Integration Tests", function()
         end)
 
         it("should compile and run a simple Nim program", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
 
             local f = io.open(test_dir .. "/hello.nim", "w")
             f:write('echo "Hello from Nim!"\n')
             f:close()
 
             local output, success = exec("cd '" .. test_dir .. "' && mise exec nim@2.2.4 -- nim c -r hello.nim 2>&1")
-            os.execute("rm -rf '" .. test_dir .. "'")
+            raw_execute("rm -rf '" .. test_dir .. "'")
 
             assert.is_true(success, "Failed to compile simple Nim program")
             assert.matches("Hello from Nim!", output)
@@ -361,9 +412,8 @@ describe("Mise Plugin Integration Tests", function()
 
     describe("Configuration Files", function()
         it("should support mise use command", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
 
             exec("cd '" .. test_dir .. "' && mise use nim@2.2.4 2>&1")
 
@@ -381,20 +431,19 @@ describe("Mise Plugin Integration Tests", function()
                 has_config = (content:match("nim") ~= nil) and (content:match("2%.2%.4") ~= nil)
             end
 
-            os.execute("rm -rf '" .. test_dir .. "'")
+            raw_execute("rm -rf '" .. test_dir .. "'")
             assert.is_true(has_config, "Neither mise.toml nor .tool-versions created with correct content")
         end)
     end)
 
     describe("Nimble Package Manager", function()
         it("should install a nimble package", function()
-            local test_dir = os.tmpname()
-            os.remove(test_dir)
-            os.execute("mkdir -p '" .. test_dir .. "'")
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
 
             local output, success =
                 exec("cd '" .. test_dir .. "' && echo 'y' | mise exec nim@2.2.4 -- nimble install -y argparse 2>&1")
-            os.execute("rm -rf '" .. test_dir .. "'")
+            raw_execute("rm -rf '" .. test_dir .. "'")
 
             assert.is_true(success, "nimble install failed: " .. output)
             local lower_output = output:lower()
