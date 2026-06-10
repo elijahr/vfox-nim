@@ -449,7 +449,13 @@ describe("Mise Plugin Integration Tests", function()
                 "mise where nim@2.2.4 failed after installation"
             )
 
-            local nim_path = exec("mise where nim@2.2.4"):gsub("%s+$", "")
+            -- mise composes its install path with native backslashes on Windows
+            -- (...\installs\nim\2.2.4), so normalize separators to forward slashes
+            -- BEFORE appending the bin/nim segment and before the file_exists check
+            -- (which runs `test -f` under bash, where backslashes are not path
+            -- separators and would make the existence check fail spuriously).
+            -- normalize_sep is a no-op on Unix.
+            local nim_path = normalize_sep(exec("mise where nim@2.2.4"))
             -- Windows installs `nim.exe`; Unix installs `nim`. BIN_EXT mirrors the
             -- plugin's post_install nim_ext so the on-disk binary is asserted exactly.
             local nim_binary = nim_path .. "/bin/nim" .. BIN_EXT
@@ -518,8 +524,17 @@ describe("Mise Plugin Integration Tests", function()
             -- The harness scrubs the developer's ambient NIMBLE_DIR for every command,
             -- so the ONLY way $NIMBLE_DIR could be non-empty under `mise exec nim@2.2.4`
             -- is if the plugin's env_keys injected it. Assert it is empty.
-            local nimble_dir = exec("mise exec nim@2.2.4 -- sh -c 'echo $NIMBLE_DIR' 2>&1"):gsub("%s+$", "")
-            nimble_dir = nimble_dir:match("[^\n]*$")
+            -- On Windows the queried value may come back nil or carry a trailing CR
+            -- (msys2 output), while the plugin correctly injects nothing. Normalize
+            -- before comparing: nil or empty-after-trim both mean "no NIMBLE_DIR
+            -- injected" and PASS; a non-empty trimmed path still FAILS (real
+            -- assertion, not a green mirage). normalize_sep collapses separators and
+            -- strips trailing CR/whitespace; it is a no-op on Unix.
+            -- normalize_sep first (strips the trailing newline + any CR), THEN take
+            -- the last line, so a wrongly-injected "/path\n" does not collapse to an
+            -- empty last line and falsely pass.
+            local nimble_dir_raw = exec("mise exec nim@2.2.4 -- sh -c 'echo $NIMBLE_DIR' 2>&1")
+            local nimble_dir = normalize_sep(nimble_dir_raw):match("[^\n]*$")
             assert.are.equal("", nimble_dir, "plugin must not inject NIMBLE_DIR; got: " .. nimble_dir)
 
             -- Defensive corollary: with no NIMBLE_DIR injected, nimble's default dir
