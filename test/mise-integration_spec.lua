@@ -5,6 +5,26 @@
 -- Test environment setup
 local IS_WINDOWS = package.config:sub(1, 1) == "\\"
 
+-- Executable extension appended to bare tool names. On Windows the installed Nim
+-- compiler is `nim.exe`; on Unix it is `nim`. The plugin already handles this
+-- internally (post_install.lua uses nim_ext); the integration spec must mirror it
+-- when asserting on-disk binary paths.
+local BIN_EXT = IS_WINDOWS and ".exe" or ""
+
+-- Normalize a path for COMPARISON only. Two Windows-specific normalizations:
+--   1. `\`->`/`: mise composes its install path with native backslashes
+--      (...\installs\nim\2.2.4) while the plugin's env_keys appends forward-slash
+--      segments (.../bin, .../nimble), yielding mixed separators. Both forms are
+--      valid for nim/nimble under msys2/mingw (real usage works), so equality must
+--      collapse separators rather than treat the difference as a failure.
+--   2. strip trailing CR/whitespace: msys2 command output (mise where, echo) can
+--      carry a trailing `\r` that the busted diff renders invisibly, making two
+--      "identical-looking" strings compare unequal. Strip it before comparing.
+-- No-op on Unix (no backslashes, no CR).
+local function normalize_sep(path)
+    return (path or ""):gsub("\\", "/"):gsub("[\r%s]+$", "")
+end
+
 -- On Windows the busted Lua is NATIVE MinGW Lua, so io.popen/os.execute spawn
 -- cmd.exe (NOT bash). The previous `bash -c '<posix>'` inline approach FAILED:
 -- cmd.exe parses the string first and mangles the nested quotes ("unexpected EOF").
@@ -243,13 +263,55 @@ local function exec_status(cmd)
     return success
 end
 
+-- On Windows the busted Lua is native MinGW Lua whose io.open resolves Windows
+-- paths, NOT the msys2 POSIX paths that `mktemp -d` returns (e.g. /tmp/tmp.XXX,
+-- which msys maps to D:\a\_temp\msys64\tmp\...). Files created under those temp
+-- dirs are therefore unreachable via native io.open, so existence/read checks must
+-- route through bash (where the POSIX path is valid). On Unix the POSIX path IS a
+-- native path, so we keep the direct io.open path for byte-for-byte parity.
 local function file_exists(path)
+    if IS_WINDOWS then
+        return exec_status("test -f '" .. path .. "'")
+    end
     local f = io.open(path, "r")
     if f then
         f:close()
         return true
     end
     return false
+end
+
+-- Read a file's full contents. On Windows, route through bash `cat` so msys2
+-- POSIX paths (from mktemp -d) resolve; on Unix use native io.open unchanged.
+-- Returns the contents string, or nil if the file does not exist / is unreadable.
+local function read_file(path)
+    if IS_WINDOWS then
+        if not file_exists(path) then
+            return nil
+        end
+        local content = exec("cat '" .. path .. "'")
+        return content
+    end
+    local f = io.open(path, "r")
+    if not f then
+        return nil
+    end
+    local content = f:read("*a")
+    f:close()
+    return content
+end
+
+-- Write text to a file. On Windows, route through bash with a heredoc so msys2
+-- POSIX paths resolve; on Unix use native io.open unchanged.
+local function write_file(path, content)
+    if IS_WINDOWS then
+        -- printf %s avoids trailing-newline surprises; content is test-controlled.
+        raw_execute("printf '%s' '" .. content:gsub("'", "'\\''") .. "' > '" .. path .. "'")
+        return
+    end
+    local f = io.open(path, "w")
+    f:write(content)
+    f:close()
 end
 
 local function dir_exists(path)
@@ -388,7 +450,10 @@ describe("Mise Plugin Integration Tests", function()
             )
 
             local nim_path = exec("mise where nim@2.2.4"):gsub("%s+$", "")
-            assert.is_true(file_exists(nim_path .. "/bin/nim"), "nim binary not found at " .. nim_path .. "/bin/nim")
+            -- Windows installs `nim.exe`; Unix installs `nim`. BIN_EXT mirrors the
+            -- plugin's post_install nim_ext so the on-disk binary is asserted exactly.
+            local nim_binary = nim_path .. "/bin/nim" .. BIN_EXT
+            assert.is_true(file_exists(nim_binary), "nim binary not found at " .. nim_binary)
         end)
     end)
 
@@ -429,9 +494,10 @@ describe("Mise Plugin Integration Tests", function()
             local test_dir = make_temp_dir()
             raw_execute("mkdir -p '" .. test_dir .. "'")
 
-            local f = io.open(test_dir .. "/hello.nim", "w")
-            f:write('echo "Hello from Nim!"\n')
-            f:close()
+            -- write_file routes through bash on Windows, where test_dir is an msys2
+            -- POSIX path (mktemp -d) that native Lua io.open cannot resolve; on Unix
+            -- it is a native io.open write, unchanged.
+            write_file(test_dir .. "/hello.nim", 'echo "Hello from Nim!"\n')
 
             local output, success = exec("cd '" .. test_dir .. "' && mise exec nim@2.2.4 -- nim c -r hello.nim 2>&1")
             raw_execute("rm -rf '" .. test_dir .. "'")
@@ -455,7 +521,17 @@ describe("Mise Plugin Integration Tests", function()
             nim_path = nim_path:match("[^\n]*$")
             local expected = nim_path .. "/nimble"
 
-            assert.are.equal(expected, nimble_dir, "NIMBLE_DIR should be the sandbox per-version nimble dir")
+            -- On Windows, `mise where` and the plugin's env_keys compose mixed
+            -- separators (mise's native `\installs\...` + the plugin's `/nimble`).
+            -- The exact byte sequences can differ only in `\` vs `/`, which is not a
+            -- real divergence (both resolve identically for nim/nimble under mingw).
+            -- Normalize separators before comparing so the assertion stays strict on
+            -- the path STRUCTURE while tolerating separator form. No-op on Unix.
+            assert.are.equal(
+                normalize_sep(expected),
+                normalize_sep(nimble_dir),
+                "NIMBLE_DIR should be the sandbox per-version nimble dir"
+            )
             -- Defensive: the resolved nim install itself must live inside the sandbox.
             assert.is_truthy(
                 nim_path:find(MISE_TEST_DIR, 1, true),
@@ -471,18 +547,19 @@ describe("Mise Plugin Integration Tests", function()
 
             exec("cd '" .. test_dir .. "' && mise use nim@2.2.4 2>&1")
 
+            -- read_file routes through bash on Windows (test_dir is an msys2 POSIX
+            -- path from mktemp -d that native Lua io.open cannot resolve) and uses
+            -- native io.open on Unix. `mise use` (not the plugin) writes the config;
+            -- the prior native io.open silently failed to read the real file on
+            -- Windows, masking a config mise had actually created.
             local has_config = false
-            if file_exists(test_dir .. "/mise.toml") then
-                local f = io.open(test_dir .. "/mise.toml", "r")
-                local content = f:read("*a")
-                f:close()
-                has_config = (content:match("nim") ~= nil)
-                    and (content:match("2%.2%.4") ~= nil or content:match('"2.2.4"') ~= nil)
-            elseif file_exists(test_dir .. "/.tool-versions") then
-                local f = io.open(test_dir .. "/.tool-versions", "r")
-                local content = f:read("*a")
-                f:close()
-                has_config = (content:match("nim") ~= nil) and (content:match("2%.2%.4") ~= nil)
+            local mise_toml = read_file(test_dir .. "/mise.toml")
+            local tool_versions = read_file(test_dir .. "/.tool-versions")
+            if mise_toml then
+                has_config = (mise_toml:match("nim") ~= nil)
+                    and (mise_toml:match("2%.2%.4") ~= nil or mise_toml:match('"2.2.4"') ~= nil)
+            elseif tool_versions then
+                has_config = (tool_versions:match("nim") ~= nil) and (tool_versions:match("2%.2%.4") ~= nil)
             end
 
             raw_execute("rm -rf '" .. test_dir .. "'")
