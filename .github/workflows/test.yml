@@ -97,7 +97,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
         run: |
-          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "cygpath=$(cygpath -u "$GITHUB_WORKSPACE")"
+          ls -la || true
+          ls -la spec 2>/dev/null || echo "no spec/ in PWD"
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")" 2>/dev/null || cd "$GITHUB_WORKSPACE" 2>/dev/null || true
+          echo "after cd PWD=$(pwd)"
+          ls -la spec 2>/dev/null || echo "no spec/ after cd"
           busted spec/ -v
 
   # Test mise integration (with integration test script)
