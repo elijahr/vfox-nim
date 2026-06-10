@@ -198,11 +198,17 @@ local function build_env_prefix()
     -- a clean CI runner, so we instead PREPEND the msys2 dirs to the INHERITED PATH
     -- so busted's lua5.1, msys coreutils, and the inherited vfox.exe all resolve. On
     -- non-Windows we keep the hardcoded SANITIZED_PATH unchanged to preserve
-    -- macOS/Linux hermeticity.
+    -- macOS/Linux hermeticity, but PREPEND $HOME/.local/bin where jdx/mise-action
+    -- installs the mise binary on Unix hosted runners (not in SANITIZED_PATH). vfox
+    -- itself lives at /usr/bin or /opt/homebrew/bin (already covered), so this is
+    -- harmless here but keeps both specs symmetric. ~/.local/bin holds mise, not
+    -- the dev's global nim (~/.local/share/mise/installs), so hermeticity holds.
+    -- HOME is expanded via os.getenv since SANITIZED_PATH is a literal Lua string.
     if IS_WINDOWS then
         table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
     else
-        table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+        local home = os.getenv("HOME") or ""
+        table.insert(parts, string.format("export PATH='%s/.local/bin:%s';", home, SANITIZED_PATH))
     end
 
     for name, value in pairs(env_vars) do

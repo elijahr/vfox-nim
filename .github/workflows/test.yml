@@ -45,20 +45,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Provides luacheck + busted on $GITHUB_PATH via hererocks (PUC Lua 5.1).
+      # pre-commit's luacheck hook (language: system) resolves luacheck from this
+      # PATH. setup-lua's Linux step also installs libreadline-dev for the build.
+      - uses: ./.github/actions/setup-lua
+
+      # mise.toml pins stylua + actionlint, which pre-commit's stylua/actionlint
+      # hooks need. .tool-versions no longer pins lua, so this no longer triggers a
+      # source build of Lua.
       - name: Install mise and .tool-versions
         uses: jdx/mise-action@v2
-
-      - name: Install lua tools (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          mise exec -- luarocks.exe --lua-version 5.1 install busted
-          mise exec -- luarocks.exe --lua-version 5.1 install luacheck
-
-      - name: Install lua tools (Linux and macOS)
-        if: runner.os != 'Windows'
-        run: |
-          mise exec -- luarocks --lua-version 5.1 install busted
-          mise exec -- luarocks --lua-version 5.1 install luacheck
 
       - name: Set up Python
         uses: actions/setup-python@v6

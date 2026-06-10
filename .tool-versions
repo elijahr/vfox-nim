@@ -1,3 +1,4 @@
 # vfox & mise tool versions
-# Use Lua 5.1 to match vfox's gopher-lua (Lua 5.1 implementation)
-lua 5.1
+# Lua tooling is provisioned by .github/actions/setup-lua (hererocks PUC Lua 5.1)
+# and by ~/.vfox-nim-rocks locally — NOT by mise, to avoid a slow, readline-fragile
+# source build. stylua + actionlint are pinned in mise.toml.

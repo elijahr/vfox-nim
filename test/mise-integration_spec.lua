@@ -208,11 +208,18 @@ local function build_env_prefix()
     -- hermeticity rationale doesn't apply on a clean CI runner, so we instead
     -- PREPEND the msys2 dirs to the INHERITED PATH so busted's lua5.1, msys
     -- coreutils, and the inherited mise.exe all resolve. On non-Windows we keep
-    -- the hardcoded SANITIZED_PATH unchanged to preserve macOS/Linux hermeticity.
+    -- the hardcoded SANITIZED_PATH unchanged to preserve macOS/Linux hermeticity,
+    -- but PREPEND $HOME/.local/bin: jdx/mise-action installs the mise binary there
+    -- on Unix hosted runners, and that dir is NOT in SANITIZED_PATH, so without it
+    -- `command -v mise` fails on hosted macOS/Linux. This does NOT leak the dev's
+    -- global nim, which lives under ~/.local/share/mise/installs (not ~/.local/bin),
+    -- so hermeticity is preserved. HOME is expanded via os.getenv since
+    -- SANITIZED_PATH is a literal Lua string.
     if IS_WINDOWS then
         table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
     else
-        table.insert(parts, string.format("export PATH='%s';", SANITIZED_PATH))
+        local home = os.getenv("HOME") or ""
+        table.insert(parts, string.format("export PATH='%s/.local/bin:%s';", home, SANITIZED_PATH))
     end
 
     for name, value in pairs(env_vars) do

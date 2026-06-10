@@ -15,6 +15,15 @@ runs:
       with:
         python-version: "3.x"
 
+    - name: Install libreadline-dev (Linux, for hererocks Lua build)
+      if: runner.os == 'Linux'
+      shell: bash
+      # hererocks compiles PUC Lua 5.1 with -DLUA_USE_READLINE, which needs
+      # readline/readline.h. It ships in the GitHub-hosted ubuntu-latest image's
+      # apt repos but not preinstalled, so the build fails with
+      # "readline/readline.h: No such file or directory" without this.
+      run: sudo apt-get update && sudo apt-get install -y libreadline-dev
+
     - name: Provision Lua + luarocks (hererocks)
       if: runner.os != 'Windows'
       shell: bash
