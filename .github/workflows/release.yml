@@ -1,0 +1,68 @@
+name: Release
+
+# yamllint disable rule:truthy
+on:
+  # yamllint enable rule:truthy
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.1.0. Must match a `## [x.y.z]` section in CHANGELOG.md."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag + GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard - release only from the default branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Release must be dispatched from main (got ${GITHUB_REF})."
+          exit 1
+
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version and extract release notes
+        id: prep
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must look like v1.2.3 (got '$VERSION')."
+            exit 1
+          fi
+          num="${VERSION#v}"
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::tag $VERSION already exists."
+            exit 1
+          fi
+          awk -v hdr="## [$num]" '
+            $0 == hdr { grab = 1; next }
+            grab && (/^## \[/ || /^\[[^]]+\]:[[:space:]]*http/) { exit }
+            grab && /^_.*_[[:space:]]*$/ { next }
+            grab { print }
+          ' CHANGELOG.md > notes.md
+          if ! [ -s notes.md ]; then
+            echo "::error::no '## [$num]' section found in CHANGELOG.md."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION" \
+            --notes-file notes.md

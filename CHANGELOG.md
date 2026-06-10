@@ -8,7 +8,7 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [0.1.0]
 
-_Not yet released — the `v0.1.0` tag is created by CI on merge to the default branch._
+_Not yet released — the `v0.1.0` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this work merges)._
 
 ### Changed
 
