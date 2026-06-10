@@ -2,6 +2,11 @@
 
 Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/).
 
+> **Third-party plugin.** vfox-nim is an independent project — not affiliated with
+> or endorsed by the mise or vfox projects, and neither registry ships a `nim`
+> plugin. You install it explicitly from this repository (see Quick Start below).
+> The name you register it under is your choice; the examples here use `nim`.
+
 ## Features
 
 Automatically selects the fastest installation method for your platform. For platforms without official binaries (macOS, Linux ARM), the plugin uses Nim's nightly build infrastructure which provides pre-built binaries for multiple platforms, often matching stable release versions.
@@ -31,9 +36,9 @@ Automatically selects the fastest installation method for your platform. For pla
 ### With mise
 
 ```bash
-# Install this plugin under the local name `nim`, directly from the Git URL (works
-# today, no registry needed). The explicit `nim` name is required so the
-# `mise install nim@...` commands below resolve to THIS plugin, not a registry lookup.
+# `nim` here is a LOCAL plugin name you choose — any name works. Registering it as
+# `nim` lets you then run `mise use nim@<version>`. This is a third-party plugin, not
+# mise's `nim` (mise has no `nim` plugin), so you must pass the repo URL explicitly.
 mise plugin install nim https://github.com/elijahr/vfox-nim
 
 # Install latest Nim
@@ -49,7 +54,8 @@ mise use -g nim@latest
 ### With vfox
 
 ```bash
-# Install the plugin from the source archive (works today, no registry needed)
+# `--alias nim` is a LOCAL name you choose (any name works). This is a third-party
+# plugin, not vfox's `nim`, so the explicit `--source` URL is required.
 vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
 
 # Install latest Nim
@@ -59,14 +65,12 @@ vfox install nim@latest
 vfox use -g nim@latest
 ```
 
-> **Installation paths / registry.** The commands above install this plugin
-> explicitly from `elijahr/vfox-nim` under the local name `nim`, and work
-> immediately. They do not depend on any registry: mise currently has no `nim`
-> shorthand (`mise registry nim` reports "tool not found"), and the bare registry
-> forms (`mise plugins install nim` with no URL, or `vfox add nim` with no
-> `--source`) would resolve to a different plugin or fail. A future one-time
-> registry submission could add a `nim` shorthand; until then, always install with
-> the explicit `elijahr/vfox-nim` URL/source and the `nim` name.
+> **Installation paths / registry.** vfox-nim is a third-party plugin; mise and vfox
+> do not reference it, and neither registry has a `nim` entry today. You always
+> install it explicitly from `elijahr/vfox-nim` as shown above, under a local name of
+> your choice. The bare registry forms (`mise plugins install nim` with no URL, or
+> `vfox add nim` with no `--source`) do NOT install this plugin — they resolve through
+> the registries to a different plugin, or fail.
 
 ## Configuration
 
@@ -175,12 +179,12 @@ Earlier versions pinned `NIMBLE_DIR` to a per-version `<install>/nimble` path
 (inherited from `asdf-nim`). That polluted the managed install directory and lost
 installed packages whenever a Nim version was reinstalled; it is no longer done.
 
-### Migrating from asdf-nim / mise-nim
+### Coming from asdf's `nim` plugin
 
-If you currently manage Nim with asdf's `nim` plugin
-([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim) — the repo
-asdf's `nim` shorthand resolves to; mise has no `nim` shorthand today) and switch to
-vfox-nim, two differences matter:
+vfox-nim is an independent alternative to asdf's `nim` plugin
+([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim)) — not an
+official successor to it, and mise has no `nim` plugin of its own. If you switch from
+asdf-nim to vfox-nim, two differences matter:
 
 - **`NIMBLE_DIR` is no longer set per-version.** asdf-nim exports
   `NIMBLE_DIR=<install>/nimble`, so your globally-installed nimble packages live
