@@ -18,18 +18,25 @@ function M.normalize_os(os_name)
     end
 end
 
-function M.normalize_arch(arch)
+-- Normalize arch to the spelling Nim's distribution channels use. The 64-bit
+-- ARM spelling is platform-specific: macOS calls it `arm64` (and Nim's macOS
+-- nightly + tarball URLs match that), while Linux nightly + source tarball URLs
+-- spell it `aarch64`. vfox/mise pass Go's `runtime.GOARCH` verbatim, which is
+-- `arm64` on Linux/ARM64 hosts too, so the `aarch64`/`arm64` branch below has
+-- to pivot on `os_name` to pick the right downstream spelling.
+function M.normalize_arch(arch, os_name)
     arch = arch:lower()
     if arch == "x86_64" or arch == "amd64" then
         return "x86_64"
     elseif arch == "i386" or arch == "i686" or arch == "x86" then
         return "i686"
-    elseif arch == "aarch64" then
+    elseif arch == "aarch64" or arch == "arm64" then
+        if os_name == "macos" or os_name == "darwin" then
+            return "arm64"
+        end
         return "aarch64"
     elseif arch == "armv7" or arch == "armv7l" then
         return "armv7"
-    elseif arch == "arm64" then
-        return "arm64" -- macOS specific
     else
         return arch
     end

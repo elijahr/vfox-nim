@@ -220,10 +220,15 @@ describe("vfox-nim smoke tests", function()
 
         it("normalizes architectures", function()
             local utils = require("lib.nim_utils")
-            assert.equal("x86_64", utils.normalize_arch("amd64"))
-            assert.equal("x86_64", utils.normalize_arch("x86_64"))
-            assert.equal("i686", utils.normalize_arch("x86"))
-            assert.equal("arm64", utils.normalize_arch("arm64"))
+            assert.equal("x86_64", utils.normalize_arch("amd64", "linux"))
+            assert.equal("x86_64", utils.normalize_arch("x86_64", "linux"))
+            assert.equal("i686", utils.normalize_arch("x86", "linux"))
+            -- 64-bit ARM normalizes to "aarch64" on Linux but "arm64" on
+            -- macOS, matching Nim's nightly + tarball URL spellings.
+            assert.equal("aarch64", utils.normalize_arch("arm64", "linux"))
+            assert.equal("aarch64", utils.normalize_arch("aarch64", "linux"))
+            assert.equal("arm64", utils.normalize_arch("arm64", "macos"))
+            assert.equal("arm64", utils.normalize_arch("aarch64", "macos"))
         end)
 
         it("detects stable versions", function()

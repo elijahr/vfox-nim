@@ -11,9 +11,11 @@ function PLUGIN:PreInstall(ctx)
     -- Valid values: "auto" (default), "binary", "source"
     local install_method = os.getenv("VFOX_NIM_INSTALL_METHOD") or "auto"
 
-    -- Get platform information
+    -- Get platform information. normalize_arch needs os_name to disambiguate
+    -- the aarch64/arm64 spelling (Linux uses "aarch64"; macOS uses "arm64"),
+    -- so normalize_os must run first.
     local os_name = utils.normalize_os(RUNTIME.osType)
-    local arch = utils.normalize_arch(RUNTIME.archType)
+    local arch = utils.normalize_arch(RUNTIME.archType, os_name)
 
     -- Determine if this is a stable version or ref
     local is_stable = utils.is_stable_version(version)

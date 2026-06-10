@@ -6,9 +6,30 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.1.1]
+
+_Not yet released — the `v0.1.1` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this commit lands)._
+
+### Fixed
+
+- `normalize_arch` is now OS-aware: it returns `aarch64` for both
+  `aarch64` and `arm64` input on Linux (matching Nim's nightly +
+  source tarball naming) and keeps `arm64` on macOS. The prior
+  bare-arch normalization returned `arm64` unconditionally, so on
+  Linux/arm64 hosts `get_platform_filename` rejected the result and
+  `PreInstall` fell through to a source build — which currently
+  fails because the Nim 2.x `csources_v2` HEAD is broken. Net effect
+  pre-fix: `v0.1.0` could not install Nim on Linux/arm64 at all.
+- Same fix benefits mise-on-Linux/arm64, since mise's RUNTIME shim
+  passes Go's `runtime.GOARCH == "arm64"` verbatim too.
+- Added install_method spec coverage for the Linux/arm64 path
+  (which was missing — only macOS/arm64 was exercised previously)
+  and the macOS/arm64 path, and tightened the smoke spec's
+  architecture-normalization assertions to cover both spellings.
+
 ## [0.1.0]
 
-_Not yet released — the `v0.1.0` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this work merges)._
+_Released via the **Release** workflow (manually dispatched from `main`)._
 
 ### Changed
 
@@ -61,5 +82,6 @@ _Not yet released — the `v0.1.0` tag and GitHub Release are created by the **R
   suites (a real `nim` install end-to-end) — passes on `ubuntu-latest`, `macos-latest`,
   and `windows-latest`, and the Windows legs are blocking (not `continue-on-error`).
 
-[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/elijahr/vfox-nim/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/elijahr/vfox-nim/releases/tag/v0.1.0

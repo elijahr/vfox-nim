@@ -182,6 +182,129 @@ describe("pre_install install_method behavior", function()
         end)
     end)
 
+    describe("Linux/arm64 arch normalization (regression for v0.1.0)", function()
+        -- v0.1.0 returned "arm64" for RUNTIME.archType=="arm64" on any OS, so
+        -- get_platform_filename rejected the Linux case (linux only accepts
+        -- "aarch64") and PreInstall fell through to source build. vfox/mise
+        -- pass Go's runtime.GOARCH verbatim, which is "arm64" on Linux/arm64
+        -- hosts, so this code path is the only one most Linux/arm64 users hit.
+        it("hits the Linux/arm64 nightly URL for stable versions", function()
+            local seen_urls = {}
+            local http = require("http")
+            http.head = function(opts)
+                table.insert(seen_urls, opts.url)
+                -- Only the linux_arm64 nightly returns 200; everything else 404s.
+                if opts.url:match("linux_arm64") then
+                    return { status_code = 200 }, nil
+                end
+                return { status_code = 404 }, nil
+            end
+            http.get = function(opts)
+                -- Stub the GitHub commits API used by find_exact_nightly_url.
+                if opts.url:match("api%.github%.com/repos/nim%-lang/Nim/commits/") then
+                    return { status_code = 200, body = "COMMITS_API_BODY" }, nil
+                end
+                return { status_code = 200, body = "[]" }, nil
+            end
+            local json = require("json")
+            local json_decode_orig = json.decode
+            json.decode = function(str)
+                if str == "COMMITS_API_BODY" then
+                    return {
+                        commit = {
+                            committer = { date = "2024-01-15T00:00:00Z" },
+                        },
+                    }
+                end
+                return json_decode_orig(str)
+            end
+            -- Stub ls-remote so the (cache-miss) commit-info lookup yields a hash.
+            local popen_orig = io.popen
+            io.popen = function(cmd)
+                if cmd:match("ls%-remote") then
+                    return {
+                        read = function()
+                            return "abc123def456\trefs/tags/v2.2.4^{}\n"
+                        end,
+                        close = function() end,
+                    }
+                end
+                return popen_orig(cmd)
+            end
+
+            dofile("hooks/pre_install.lua")
+            ctx.version = "2.2.4"
+            RUNTIME.osType = "Linux"
+            RUNTIME.archType = "arm64" -- Go's runtime.GOARCH spelling
+
+            local result = PLUGIN:PreInstall(ctx)
+
+            io.popen = popen_orig
+            json.decode = json_decode_orig
+
+            assert.is_table(result)
+            assert.is_string(result.url)
+            -- The fix: we MUST get a linux_arm64 binary URL, not a source tarball.
+            assert.matches("linux_arm64", result.url)
+            -- And the note must mention linux/aarch64 (normalized form), not the raw "arm64".
+            assert.matches("linux/aarch64", result.note)
+        end)
+
+        it("preserves arm64 spelling for macOS/arm64 nightly URLs", function()
+            local http = require("http")
+            http.head = function(opts)
+                if opts.url:match("macosx_arm64") then
+                    return { status_code = 200 }, nil
+                end
+                return { status_code = 404 }, nil
+            end
+            http.get = function(opts)
+                if opts.url:match("api%.github%.com/repos/nim%-lang/Nim/commits/") then
+                    return { status_code = 200, body = "COMMITS_API_BODY" }, nil
+                end
+                return { status_code = 200, body = "[]" }, nil
+            end
+            local json = require("json")
+            local json_decode_orig = json.decode
+            json.decode = function(str)
+                if str == "COMMITS_API_BODY" then
+                    return {
+                        commit = {
+                            committer = { date = "2024-01-15T00:00:00Z" },
+                        },
+                    }
+                end
+                return json_decode_orig(str)
+            end
+            local popen_orig = io.popen
+            io.popen = function(cmd)
+                if cmd:match("ls%-remote") then
+                    return {
+                        read = function()
+                            return "abc123def456\trefs/tags/v2.2.4^{}\n"
+                        end,
+                        close = function() end,
+                    }
+                end
+                return popen_orig(cmd)
+            end
+
+            dofile("hooks/pre_install.lua")
+            ctx.version = "2.2.4"
+            RUNTIME.osType = "Darwin"
+            RUNTIME.archType = "arm64"
+
+            local result = PLUGIN:PreInstall(ctx)
+
+            io.popen = popen_orig
+            json.decode = json_decode_orig
+
+            assert.is_table(result)
+            assert.matches("macosx_arm64", result.url)
+            assert.matches("macos/arm64", result.note)
+        end)
+    end)
+
     describe("reading VFOX_NIM_INSTALL_METHOD from environment", function()
         it("reads 'auto' from environment", function()
             _G.os.getenv = function(name)

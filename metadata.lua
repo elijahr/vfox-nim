@@ -7,7 +7,7 @@ PLUGIN = {
     name = "nim",
 
     -- Required: Plugin version (not the tool version)
-    version = "0.1.0",
+    version = "0.1.1",
 
     -- Required: Brief description of the tool
     description = "Nim compiler version manager with Windows support (vfox/mise tool plugin)",
