@@ -96,7 +96,9 @@ jobs:
       - name: Run Lua unit tests (Windows)
         if: runner.os == 'Windows'
         shell: "msys2 {0}"
-        run: busted spec/ -v
+        run: |
+          cd "$(cygpath -u "$GITHUB_WORKSPACE")"
+          busted spec/ -v
 
   # Test mise integration (with integration test script)
   mise_integration_test:
