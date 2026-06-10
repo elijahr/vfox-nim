@@ -40,7 +40,18 @@ describe("install logic (Tier II)", function()
         -- remove it and use its path as a fresh-directory base instead.
         orig_getenv = os.getenv
         orig_home = orig_getenv("HOME")
+        -- os.tmpname() is "/"-rooted on Unix (no backslashes) but on Windows returns a
+        -- bare leaf like "\s5a2." rooted at the drive cwd. Normalize in two ordered
+        -- steps to match test/vfox-integration_spec.lua's tmpname() helper: (a) if the
+        -- raw name is leading-backslash-rooted and TEMP is set, prepend %TEMP% for an
+        -- absolute path; (b) convert remaining backslashes to forward slashes so the
+        -- path interpolates safely into the single-quoted POSIX `mkdir -p`/`rm -rf`
+        -- shell commands below. Both steps are no-ops on Unix.
         local tmp_name = os.tmpname()
+        if tmp_name:sub(1, 1) == "\\" and orig_getenv("TEMP") then
+            tmp_name = orig_getenv("TEMP") .. tmp_name
+        end
+        tmp_name = tmp_name:gsub("\\", "/")
         os.remove(tmp_name)
         tmp_home = tmp_name .. "-vfox-nim-home"
         os.execute("mkdir -p '" .. tmp_home .. "/.cache/vfox-nim'")

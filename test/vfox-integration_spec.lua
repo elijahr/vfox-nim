@@ -14,15 +14,19 @@ local function setenv(name, value)
 end
 
 -- os.tmpname() on Windows returns a bare leaf like "\s5a2." rooted at the drive's
--- current dir, not an absolute path under TEMP. Prefix it with %TEMP% so the path is
--- usable. On Unix os.tmpname() returns a "/"-rooted absolute path, so the backslash
--- check fails and this is a no-op.
+-- current dir, not an absolute path under TEMP. Normalize in two ordered steps:
+-- (a) if the raw name is leading-backslash-rooted and TEMP is set, prepend %TEMP%
+-- so the path is absolute and usable; (b) convert any remaining backslashes to
+-- forward slashes so the path interpolates safely into single-quoted POSIX shell
+-- commands (msys/git-bash) without backslash-escaping surprises. On Unix
+-- os.tmpname() returns a "/"-rooted absolute path with no backslashes, so both
+-- steps are no-ops.
 local function tmpname()
     local name = os.tmpname()
     if name:sub(1, 1) == "\\" and os.getenv("TEMP") then
         name = os.getenv("TEMP") .. name
     end
-    return name
+    return name:gsub("\\", "/")
 end
 
 -- Ambient variables that leak the developer's GLOBALLY-active mise/nim toolchain

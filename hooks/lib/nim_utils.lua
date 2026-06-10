@@ -114,14 +114,15 @@ function M.is_windows()
 end
 
 function M.is_macos()
+    -- Windows is never macOS; short-circuit FIRST, before any RUNTIME or uname
+    -- inspection. On Unix is_windows()'s package.config check is "/" so this is a
+    -- no-op; on Windows it guarantees is_macos() never shells out to uname.
+    if M.is_windows() then
+        return false
+    end
     if RUNTIME and RUNTIME.osType then
         local t = RUNTIME.osType:lower()
         return t:match("darwin") ~= nil or t:match("macos") ~= nil
-    end
-    -- Windows is never macOS; short-circuit before the uname shell-out. On Unix
-    -- is_windows()'s package.config check is "/" so this is a no-op.
-    if M.is_windows() then
-        return false
     end
     local handle = io.popen("uname 2>/dev/null")
     if not handle then
