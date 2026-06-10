@@ -5,12 +5,6 @@
 -- Test environment setup
 local IS_WINDOWS = package.config:sub(1, 1) == "\\"
 
--- Executable extension appended to bare tool names. On Windows the installed Nim
--- compiler is `nim.exe`; on Unix it is `nim`. The plugin already handles this
--- internally (post_install.lua uses nim_ext); the integration spec must mirror it
--- when asserting on-disk binary paths.
-local BIN_EXT = IS_WINDOWS and ".exe" or ""
-
 -- Normalize a path for COMPARISON only. Two Windows-specific normalizations:
 --   1. `\`->`/`: vfox/msys2 compose install paths with native backslashes while
 --      the spec asserts forward-slash segments (.../bin/nim), yielding mixed
@@ -478,11 +472,13 @@ describe("vfox Plugin Integration Tests", function()
             -- whitespace so the containment check is separator-agnostic (no-op on
             -- Unix). Apply it to the FULL output first (stripping the trailing
             -- newline) THEN take the last line, so a trailing "\n" does not yield an
-            -- empty last line. On Windows the resolved binary is nim.exe, so the
-            -- expected suffix carries BIN_EXT.
+            -- empty last line. Match the sdk bin path WITHOUT a binary extension:
+            -- msys2 `command -v nim` reports the resolved path as `.../bin/nim`
+            -- even though the file is nim.exe, and `/bin/nim` is a substring of
+            -- both forms, so this works on Windows and Unix alike.
             local nim_path = normalize_sep(output):match("[^\n]*$")
             assert.is_truthy(
-                nim_path:find("/.vfox/sdks/nim/bin/nim" .. BIN_EXT, 1, true),
+                nim_path:find("/.vfox/sdks/nim/bin/nim", 1, true),
                 "nim not resolved from the activated vfox sdk: " .. nim_path
             )
         end)
