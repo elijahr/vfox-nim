@@ -17,9 +17,11 @@ Automatically selects the fastest installation method for your platform. For pla
 | macOS x64   |        ❌         |       ✅       |      ✅      | ~60s         |
 | macOS ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
 
-> **Windows.** The plugin logic supports Windows; Windows CI verification is
-> deferred (the matrix legs are non-blocking this release). Linux and macOS are
-> CI-verified.
+> **Windows.** Fully supported and CI-verified: the unit, mise-integration, and
+> vfox-integration suites run green on `windows-latest` (a real `nim` install
+> end-to-end) and the Windows legs are blocking. The one exception is the
+> source-build method — `auto` selects the prebuilt binary on Windows (see the
+> Windows note under Installation Method).
 
 - Configurable installation method (auto/binary/source)
 - Includes Nim compiler, Nimble package manager, and tools
@@ -168,6 +170,25 @@ Leaving it unset means:
 Earlier versions pinned `NIMBLE_DIR` to a per-version `<install>/nimble` path
 (inherited from `asdf-nim`). That polluted the managed install directory and lost
 installed packages whenever a Nim version was reinstalled; it is no longer done.
+
+### Migrating from asdf-nim / mise-nim
+
+If you currently manage Nim with the asdf/mise `nim` plugin
+([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim) — the repo
+the mise `nim` shorthand resolves to) and switch to vfox-nim, two differences matter:
+
+- **`NIMBLE_DIR` is no longer set per-version.** asdf-nim exports
+  `NIMBLE_DIR=<install>/nimble`, so your globally-installed nimble packages live
+  inside each Nim version's install directory. vfox-nim leaves `NIMBLE_DIR` unset
+  (shared `~/.nimble`, matching `choosenim`). After switching, reinstall your global
+  nimble tools (`nimble install -g <pkg>`) so they resolve from `~/.nimble`; the old
+  per-version packages are not deleted, just no longer on `PATH`. To keep the old
+  layout, set `NIMBLE_DIR` yourself — the plugin honors it.
+- **Switching plugins is a reinstall, not an update.** `mise plugins update` pulls
+  the installed plugin's own Git remote; it does not move you between different
+  plugins. asdf-nim is an asdf-backend plugin and vfox-nim is a vfox-backend plugin,
+  so switch with `mise plugin uninstall nim && mise plugin install https://github.com/elijahr/vfox-nim`
+  (for vfox: `vfox remove nim`, then re-add per the Quick Start).
 
 ## Development
 
