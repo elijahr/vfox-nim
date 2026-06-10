@@ -113,6 +113,18 @@ function M.is_windows()
     return result:match("mingw") ~= nil or result:match("msys") ~= nil or result:match("windows") ~= nil
 end
 
+-- OS-aware "discard stderr" redirect for commands run through a shell.
+-- `2>/dev/null` is POSIX; under cmd.exe (vfox-on-Windows) the equivalent is `2>nul`,
+-- and the POSIX form would leave `/dev/null` as a stray arg and emit
+-- "The system cannot find the path specified." Use this only for command strings that
+-- can actually run through cmd.exe on Windows; the Unix form is preserved byte-for-byte.
+function M.null_redirect()
+    if M.is_windows() then
+        return "2>nul"
+    end
+    return "2>/dev/null"
+end
+
 function M.is_macos()
     -- Windows is never macOS; short-circuit FIRST, before any RUNTIME or uname
     -- inspection. On Unix is_windows()'s package.config check is "/" so this is a
@@ -258,7 +270,12 @@ function M.get_version_commit_info(version)
 
     -- Fetch from git
     local tag = "v" .. version
-    local cmd = "git ls-remote --tags https://github.com/nim-lang/Nim.git refs/tags/" .. tag .. "^{} 2>/dev/null"
+    -- OS-aware stderr discard: this io.popen runs through cmd.exe on Windows during version
+    -- resolution, where `2>/dev/null` would misfire; M.null_redirect() yields `2>nul` there.
+    local cmd = "git ls-remote --tags https://github.com/nim-lang/Nim.git refs/tags/"
+        .. tag
+        .. "^{} "
+        .. M.null_redirect()
     local handle = io.popen(cmd)
     local result = handle:read("*a")
     handle:close()

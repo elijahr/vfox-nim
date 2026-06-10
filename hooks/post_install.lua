@@ -82,8 +82,17 @@ function PLUGIN:PostInstall(ctx)
     local needs_restructure = not path_basename:match("^nim%-")
 
     if needs_restructure then
-        -- mise-style: Look for nim-* subdirectory and move contents up
-        local find_cmd = 'find "' .. path .. '" -maxdepth 1 -type d -name "nim-*" 2>/dev/null | head -1'
+        -- mise-style: Look for nim-* subdirectory and move contents up.
+        -- OS-aware stderr discard (utils.null_redirect => `2>nul` on Windows). NOTE: the
+        -- `find ... | head -1` pipeline is itself POSIX-only (no cmd.exe equivalent of
+        -- find/head); this restructure path is reached on mise-style extraction regardless of
+        -- OS, so the Unix-ism remains a known limitation here. Rewriting find|head is out of
+        -- scope for this redirect-portability fix; only the redirect is normalized.
+        local find_cmd = 'find "'
+            .. path
+            .. '" -maxdepth 1 -type d -name "nim-*" '
+            .. utils.null_redirect()
+            .. " | head -1"
         local handle = io.popen(find_cmd)
         local found_dir = handle:read("*a"):gsub("%s+$", "")
         handle:close()
@@ -200,10 +209,12 @@ build_from_source = function(install_path, is_windows, nim_ext) -- luacheck: no 
         if not quiet then
             print("Running: " .. cmd)
         end
-        -- Redirect stderr to suppress compiler warnings unless verbose mode
+        -- Redirect stderr to suppress compiler warnings unless verbose mode.
+        -- OS-aware redirect: the source-build path can run under cmd.exe on Windows (the
+        -- build_all.bat branch), where `2>nul` is correct; utils.null_redirect() handles both.
         local full_cmd = cmd
         if quiet and not os.getenv("MISE_VERBOSE") then
-            full_cmd = cmd .. " 2>/dev/null"
+            full_cmd = cmd .. " " .. utils.null_redirect()
         end
         local result = os.execute(full_cmd)
         if result ~= 0 and result ~= true then
@@ -288,8 +299,16 @@ nim_csourcesHash=86742fb02c6606ab01a532a0085784effb2e753e
         -- Build nimble if not present
         print("Building nimble package manager...")
         if not file_exists(install_path .. "/bin/nimble" .. nim_ext) then
-            -- Try nimble build, but don't fail if it doesn't work (some versions don't have this)
-            os.execute('cd "' .. native_path(install_path) .. '" && "' .. koch .. '" nimble -d:release 2>/dev/null')
+            -- Try nimble build, but don't fail if it doesn't work (some versions don't have this).
+            -- OS-aware stderr discard (utils.null_redirect => `2>nul` under cmd.exe on Windows).
+            os.execute(
+                'cd "'
+                    .. native_path(install_path)
+                    .. '" && "'
+                    .. koch
+                    .. '" nimble -d:release '
+                    .. utils.null_redirect()
+            )
         end
     end
 
