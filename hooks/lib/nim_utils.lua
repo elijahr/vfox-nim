@@ -89,19 +89,60 @@ function M.is_ref_version(version)
     return version:match("^ref:") ~= nil
 end
 
--- Platform detection
+-- Platform detection.
+-- Authoritative inside a hook: vfox/mise injects RUNTIME.osType. Fall back to the
+-- OS env var (Windows_NT on all Windows), then uname, for standalone/test contexts.
 function M.is_windows()
-    local handle = io.popen("uname 2>/dev/null || echo Windows")
-    local result = handle:read("*a")
+    if RUNTIME and RUNTIME.osType then
+        return RUNTIME.osType:lower():match("windows") ~= nil
+    end
+    if os.getenv("OS") == "Windows_NT" then
+        return true
+    end
+    -- package.config's first char is the platform path separator: "\\" on Windows,
+    -- "/" on Unix. This detects Windows without a uname shell-out and is a no-op on Unix.
+    if package and package.config and package.config:sub(1, 1) == "\\" then
+        return true
+    end
+    local handle = io.popen("uname 2>/dev/null")
+    if not handle then
+        return false
+    end
+    local result = (handle:read("*a") or ""):lower()
     handle:close()
-    return result:lower():match("windows") ~= nil or result:lower():match("mingw") ~= nil
+    return result:match("mingw") ~= nil or result:match("msys") ~= nil or result:match("windows") ~= nil
+end
+
+-- OS-aware "discard stderr" redirect for commands run through a shell.
+-- `2>/dev/null` is POSIX; under cmd.exe (vfox-on-Windows) the equivalent is `2>nul`,
+-- and the POSIX form would leave `/dev/null` as a stray arg and emit
+-- "The system cannot find the path specified." Use this only for command strings that
+-- can actually run through cmd.exe on Windows; the Unix form is preserved byte-for-byte.
+function M.null_redirect()
+    if M.is_windows() then
+        return "2>nul"
+    end
+    return "2>/dev/null"
 end
 
 function M.is_macos()
+    -- Windows is never macOS; short-circuit FIRST, before any RUNTIME or uname
+    -- inspection. On Unix is_windows()'s package.config check is "/" so this is a
+    -- no-op; on Windows it guarantees is_macos() never shells out to uname.
+    if M.is_windows() then
+        return false
+    end
+    if RUNTIME and RUNTIME.osType then
+        local t = RUNTIME.osType:lower()
+        return t:match("darwin") ~= nil or t:match("macos") ~= nil
+    end
     local handle = io.popen("uname 2>/dev/null")
-    local result = handle:read("*a")
+    if not handle then
+        return false
+    end
+    local result = (handle:read("*a") or ""):lower()
     handle:close()
-    return result:lower():match("darwin") ~= nil
+    return result:match("darwin") ~= nil
 end
 
 -- Get official binary URL (from asdf-nim:394-406)
@@ -123,34 +164,67 @@ function M.get_official_url(version, os_name, arch)
     return nil
 end
 
--- Check if URL exists (HEAD request)
+-- Check if URL exists (HEAD request).
+-- Only api.github.com calls carry the GitHub Authorization header. Release-download
+-- URLs (github.com/.../releases/download/...) and nim-lang.org are public and 302-redirect
+-- to a presigned asset host that REJECTS a forwarded Authorization header with HTTP 401;
+-- attaching the token there makes url_exists wrongly report the asset as missing. The
+-- 60/hr unauthenticated rate limit applies to api.github.com, not to asset downloads, so
+-- non-api hosts need no auth header at all.
 function M.url_exists(url)
     local http = require("http")
-    local resp, err = http.head({ url = url, headers = M.get_github_headers() })
-    if err ~= nil then
+    local headers = {}
+    if url:match("^https://api%.github%.com") then
+        headers = M.get_github_headers()
+    end
+    local resp, err = http.head({ url = url, headers = headers })
+    if err ~= nil or not resp then
         return false
     end
     return resp.status_code == 200 or resp.status_code == 302
 end
 
--- Adjust date by offset days
+-- Days since 1970-01-01 for a proleptic-Gregorian civil date (Howard Hinnant's algorithm).
+-- Pure integer arithmetic; valid for any Lua 5.1+/LuaJIT/gopher-lua. m in 1..12.
+local function days_from_civil(y, m, d)
+    y = (m <= 2) and (y - 1) or y
+    local era = math.floor((y >= 0 and y or (y - 399)) / 400)
+    local yoe = y - era * 400 -- [0, 399]
+    local doy = math.floor((153 * ((m > 2) and (m - 3) or (m + 9)) + 2) / 5) + d - 1 -- [0, 365]
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy -- [0, 146096]
+    return era * 146097 + doe - 719468
+end
+
+-- Inverse: civil date (y, m, d) from a day count since 1970-01-01.
+local function civil_from_days(z)
+    z = z + 719468
+    local era = math.floor((z >= 0 and z or (z - 146096)) / 146097)
+    local doe = z - era * 146097 -- [0, 146096]
+    local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365) -- [0, 399]
+    local y = yoe + era * 400
+    local doy = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100)) -- [0, 365]
+    local mp = math.floor((5 * doy + 2) / 153) -- [0, 11]
+    local d = doy - math.floor((153 * mp + 2) / 5) + 1 -- [1, 31]
+    local m = mp < 10 and (mp + 3) or (mp - 9) -- [1, 12]
+    return (m <= 2) and (y + 1) or y, m, d
+end
+
+-- Adjust "YYYY-MM-DD" by `offset` days, returns "YYYY-MM-DD".
+-- Pure integer arithmetic: timezone-, DST-, and OS-independent. No os.time/os.date/shell-out.
 function M.adjust_date(date_str, offset)
-    -- date_str format: "YYYY-MM-DD"
-    local cmd
-    if M.is_macos() then
-        -- macOS date syntax
-        local offset_arg = offset >= 0 and ("+" .. offset .. "d") or (offset .. "d")
-        cmd = string.format('date -j -v%s -f "%%Y-%%m-%%d" "%s" "+%%Y-%%m-%%d" 2>/dev/null', offset_arg, date_str)
-    else
-        -- Linux date syntax
-        cmd = string.format('date -d "%s %d days" "+%%Y-%%m-%%d" 2>/dev/null', date_str, offset)
+    -- Defensive: a nil/non-string date_str would crash the :match below. Return the
+    -- same "" the function already yields for malformed input (consistent with the
+    -- install_logic_spec expectation that garbage input yields "").
+    if type(date_str) ~= "string" then
+        return ""
     end
-
-    local handle = io.popen(cmd)
-    local result = handle:read("*a"):gsub("%s+$", "")
-    handle:close()
-
-    return result
+    local y, m, d = date_str:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
+    if not y then
+        return ""
+    end
+    local days = days_from_civil(tonumber(y), tonumber(m), tonumber(d)) + offset
+    local ny, nm, nd = civil_from_days(days)
+    return string.format("%04d-%02d-%02d", ny, nm, nd)
 end
 
 -- Cache helpers
@@ -196,7 +270,12 @@ function M.get_version_commit_info(version)
 
     -- Fetch from git
     local tag = "v" .. version
-    local cmd = "git ls-remote --tags https://github.com/nim-lang/Nim.git refs/tags/" .. tag .. "^{} 2>/dev/null"
+    -- OS-aware stderr discard: this io.popen runs through cmd.exe on Windows during version
+    -- resolution, where `2>/dev/null` would misfire; M.null_redirect() yields `2>nul` there.
+    local cmd = "git ls-remote --tags https://github.com/nim-lang/Nim.git refs/tags/"
+        .. tag
+        .. "^{} "
+        .. M.null_redirect()
     local handle = io.popen(cmd)
     local result = handle:read("*a")
     handle:close()

@@ -17,6 +17,12 @@ Automatically selects the fastest installation method for your platform. For pla
 | macOS x64   |        ❌         |       ✅       |      ✅      | ~60s         |
 | macOS ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
 
+> **Windows.** Fully supported and CI-verified: the unit, mise-integration, and
+> vfox-integration suites run green on `windows-latest` (a real `nim` install
+> end-to-end) and the Windows legs are blocking. The one exception is the
+> source-build method — `auto` selects the prebuilt binary on Windows (see the
+> Windows note under Installation Method).
+
 - Configurable installation method (auto/binary/source)
 - Includes Nim compiler, Nimble package manager, and tools
 
@@ -25,8 +31,10 @@ Automatically selects the fastest installation method for your platform. For pla
 ### With mise
 
 ```bash
-# Install the plugin
-mise plugins install nim
+# Install this plugin under the local name `nim`, directly from the Git URL (works
+# today, no registry needed). The explicit `nim` name is required so the
+# `mise install nim@...` commands below resolve to THIS plugin, not a registry lookup.
+mise plugin install nim https://github.com/elijahr/vfox-nim
 
 # Install latest Nim
 mise install nim@latest
@@ -41,8 +49,8 @@ mise use -g nim@latest
 ### With vfox
 
 ```bash
-# Install the plugin
-vfox add nim
+# Install the plugin from the source archive (works today, no registry needed)
+vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
 
 # Install latest Nim
 vfox install nim@latest
@@ -50,6 +58,15 @@ vfox install nim@latest
 # Set as global default
 vfox use -g nim@latest
 ```
+
+> **Installation paths / registry.** The commands above install this plugin
+> explicitly from `elijahr/vfox-nim` under the local name `nim`, and work
+> immediately. They do not depend on any registry: mise currently has no `nim`
+> shorthand (`mise registry nim` reports "tool not found"), and the bare registry
+> forms (`mise plugins install nim` with no URL, or `vfox add nim` with no
+> `--source`) would resolve to a different plugin or fail. A future one-time
+> registry submission could add a `nim` shorthand; until then, always install with
+> the explicit `elijahr/vfox-nim` URL/source and the `nim` name.
 
 ## Configuration
 
@@ -124,6 +141,10 @@ VFOX_NIM_INSTALL_METHOD = "source"
 - **`binary`**: Same as auto, but fails with error instead of falling back to source build.
 - **`source`**: Immediately downloads source tarball and builds (stable versions only).
 
+> **Windows note.** On Windows the plugin installs official prebuilt Nim binaries.
+> Forcing a source compile (`VFOX_NIM_INSTALL_METHOD=source`) is **not supported on
+> Windows**; `auto` correctly selects the binary install path there.
+
 **Testing your configuration:**
 
 ```bash
@@ -137,17 +158,87 @@ mise install nim@2.0.0
 mise ls nim
 ```
 
+### Nimble package directory (`NIMBLE_DIR`)
+
+This plugin does **not** set `NIMBLE_DIR`. Nim therefore uses the shared
+`~/.nimble` directory, matching the behavior of
+[`choosenim`](https://github.com/nim-lang/choosenim) and a standard Nim install.
+Leaving it unset means:
+
+- A `NIMBLE_DIR` you set yourself (in your shell, `mise.toml` `[env]`, or CI) is
+  respected — the plugin never overrides it.
+- Nimble's project-local
+  [`nimbledeps`](https://nim-lang.github.io/nimble/workflow.html#nimbledeps)
+  auto-detection still works (it only activates when `NIMBLE_DIR` is unset).
+
+Earlier versions pinned `NIMBLE_DIR` to a per-version `<install>/nimble` path
+(inherited from `asdf-nim`). That polluted the managed install directory and lost
+installed packages whenever a Nim version was reinstalled; it is no longer done.
+
+### Migrating from asdf-nim / mise-nim
+
+If you currently manage Nim with asdf's `nim` plugin
+([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim) — the repo
+asdf's `nim` shorthand resolves to; mise has no `nim` shorthand today) and switch to
+vfox-nim, two differences matter:
+
+- **`NIMBLE_DIR` is no longer set per-version.** asdf-nim exports
+  `NIMBLE_DIR=<install>/nimble`, so your globally-installed nimble packages live
+  inside each Nim version's install directory. vfox-nim leaves `NIMBLE_DIR` unset
+  (shared `~/.nimble`, matching `choosenim`). After switching, reinstall your global
+  nimble tools (`nimble install -g <pkg>`) so they resolve from `~/.nimble`; the old
+  per-version packages are not deleted, just no longer on `PATH`. To keep the old
+  layout, set `NIMBLE_DIR` yourself — the plugin honors it.
+- **Switching plugins is a reinstall, not an update.** `mise plugins update` pulls
+  the installed plugin's own Git remote; it does not move you between different
+  plugins. asdf-nim is an asdf-backend plugin and vfox-nim is a vfox-backend plugin,
+  so switch with `mise plugin uninstall nim && mise plugin install nim https://github.com/elijahr/vfox-nim`
+  (for vfox: `vfox remove nim`, then re-add per the Quick Start).
+
 ## Development
 
 ```bash
+# 1. Trust the repo's mise config (an untrusted mise.toml breaks every shimmed
+#    command with "not trusted").
+mise trust
+
+# 2. Provision a durable Lua 5.1-ABI toolchain (LuaJIT + busted/luacheck) OUTSIDE
+#    /tmp so it survives reboots. LuaJIT is the Lua 5.1-ABI interpreter the suite
+#    runs green under (~0.5s). Install LuaJIT and luarocks first if absent:
+#    `brew install luajit luarocks`.
+luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
+  --tree "$HOME/.vfox-nim-rocks" install busted
+luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
+  --tree "$HOME/.vfox-nim-rocks" install luacheck
+
 # Link plugin for development
 mise plugin link --force nim .
 
-# Run tests
+# Fast unit suite (Tiers I+II — mocked wiring + install-logic). The rocks-tree
+# bin must be on PATH so `busted` resolves:
+PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run test-unit
+# Equivalent direct invocation (set LUA_PATH/LUA_CPATH to the rocks tree first):
+#   export LUA_PATH="$HOME/.vfox-nim-rocks/share/lua/5.1/?.lua;$HOME/.vfox-nim-rocks/share/lua/5.1/?/init.lua;./?.lua;./?/init.lua;;"
+#   export LUA_CPATH="$HOME/.vfox-nim-rocks/lib/lua/5.1/?.so;;"
+#   luajit "$HOME/.vfox-nim-rocks/bin/busted" spec/
+
+# Install-smoke test (downloads and runs a real Nim toolchain over the network):
 mise run test
 
-# Run linting
+# Lint + format. These run the pre-commit hooks. pre-commit's `luacheck` hook
+# needs `luacheck` on PATH — it is NOT provided by mise.toml (which only pins
+# stylua + actionlint). Install it into the durable rocks tree above and expose
+# its bin, e.g.:
+#   PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run lint
+# Without luacheck on PATH, commits fail with "Executable `luacheck` not found".
+# Lint/format use the mise-pinned stylua 2.3.1 — always invoke via mise so CI and
+# local agree (a system stylua may be a different version, e.g. 2.5.2):
 mise run lint
+mise run format
+
+# Reproduce the Linux CI legs locally (Docker; macOS/Windows legs are not act-runnable):
+act -j lua_tests                                      # Tier I+II Linux leg
+act -j vfox_integration_test -s GITHUB_TOKEN=<token>  # Tier III Linux leg
 ```
 
 ## License
