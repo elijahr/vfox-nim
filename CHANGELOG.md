@@ -6,6 +6,10 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.1.2]
+
+_Not yet released — the `v0.1.2` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this commit lands)._
+
 ### Changed
 
 - Renamed the install-method environment variable from `VFOX_NIM_INSTALL_METHOD`
@@ -13,10 +17,33 @@ All notable changes to vfox-nim are documented here. Format follows
   convention, and the plugin is installed under the name `nim`, so the `VFOX_`
   prefix was misleading (it also runs under mise). The `mise.toml` `install_method`
   tool option is unchanged and remains the primary way to configure mise.
+- Trimmed the README: simplified the feature list, removed a redundant
+  installation-paths/registry note, tightened the Configuration section, and dropped
+  the unbenchmarked "Install Time" column from the platform table.
+
+### Added
+
+- Integration tests covering the `[env] _.nim` install-method config path (a
+  regression lock for the env-directive wiring that the `_.vfox-nim` bug broke),
+  preservation of a user-set `NIMBLE_DIR` under both mise and vfox, and project-local
+  `nimbledeps` being respected when `NIMBLE_DIR` is unset.
+- README: a vfox variant in the GitHub Actions section (mise remains the primary
+  example).
+
+### Fixed
+
+- The MiseEnv config directive key is `_.nim` (the local install name), not
+  `_.vfox-nim`; the wrong key silently dropped the `install_method` option.
+- Added the missing `test` mise task, so `mise run test` and `mise run ci` work
+  (both referenced a task that did not exist).
+- README accuracy: corrected a fabricated install-note line in the demo transcript,
+  made the Quick Start version consistent (`2.2.0`), and scoped the partial-version
+  examples (`nim@2.2`, `nim@2`) to mise's own resolver since the plugin does not
+  implement fuzzy matching.
 
 ## [0.1.1]
 
-_Not yet released — the `v0.1.1` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this commit lands)._
+_Released via the **Release** workflow (manually dispatched from `main`)._
 
 ### Added
 
@@ -118,6 +145,7 @@ _Released via the **Release** workflow (manually dispatched from `main`)._
   suites (a real `nim` install end-to-end) — passes on `ubuntu-latest`, `macos-latest`,
   and `windows-latest`, and the Windows legs are blocking (not `continue-on-error`).
 
-[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/elijahr/vfox-nim/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/elijahr/vfox-nim/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/elijahr/vfox-nim/releases/tag/v0.1.0
