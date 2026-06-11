@@ -76,13 +76,6 @@ $ mise exec nim@2.2.0 -- nim --version
 Nim Compiler Version 2.2.0 [Linux: amd64]
 ```
 
-> **Installation paths / registry.** vfox-nim is a third-party plugin; mise and vfox
-> do not reference it, and neither registry has a `nim` entry today. You always
-> install it explicitly from `elijahr/vfox-nim` as shown above, under a local name of
-> your choice. The bare registry forms (`mise plugins install nim` with no URL, or
-> `vfox add nim` with no `--source`) do NOT install this plugin — they resolve through
-> the registries to a different plugin, or fail.
-
 ## Installing versions
 
 ```bash
