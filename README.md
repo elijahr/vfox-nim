@@ -2,9 +2,20 @@
 
 Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/). Supports Windows, macOS, and Linux, on amd64, x86 and arm64.
 
+[![CI](https://github.com/elijahr/vfox-nim/actions/workflows/test.yml/badge.svg)](https://github.com/elijahr/vfox-nim/actions/workflows/test.yml)
+[![Latest release](https://img.shields.io/github/v/release/elijahr/vfox-nim)](https://github.com/elijahr/vfox-nim/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 ## Features
 
-Automatically selects the fastest installation method for your platform. For platforms without official binaries (macOS, Linux ARM), the plugin uses Nim's nightly build infrastructure which provides pre-built binaries for multiple platforms, often matching stable release versions.
+- **Fastest method per platform** — automatically selects the quickest installation path for your OS and architecture.
+- **Four-level install strategy** — for stable versions, tries official binaries → exact nightly match → generic nightly builds → build from source.
+- **Cross-platform** — Linux, macOS, and Windows on amd64, x86, and arm64, including the full toolchain (Nim compiler, Nimble package manager, and tools).
+- **Windows-native and CI-verified** — fully supported with the unit, mise-integration, and vfox-integration suites running green on `windows-latest`.
+- **Configurable install method** — choose `auto`, `binary`, or `source` to control how versions are installed.
+- **Shared `~/.nimble`** — does not set `NIMBLE_DIR`, so Nimble uses the shared `~/.nimble` directory, matching a standard Nim install.
+
+For platforms without official binaries (macOS, Linux ARM), the plugin uses Nim's nightly build infrastructure, which provides pre-built binaries for multiple platforms, often matching stable release versions.
 
 | Platform    | Official Binaries | Nightly Builds | Source Build | Install Time |
 | ----------- | :---------------: | :------------: | :----------: | ------------ |
@@ -22,9 +33,6 @@ Automatically selects the fastest installation method for your platform. For pla
 > end-to-end) and the Windows legs are blocking. The one exception is the
 > source-build method — `auto` selects the prebuilt binary on Windows (see the
 > Windows note under Installation Method).
-
-- Configurable installation method (auto/binary/source)
-- Includes Nim compiler, Nimble package manager, and tools
 
 ## Quick Start
 
@@ -53,6 +61,20 @@ vfox install nim@latest
 
 # Set as global default
 vfox use -g nim@latest
+```
+
+<!-- TODO: demo GIF/asciinema of `mise install nim@2.2.0`. Record with vhs or asciinema,
+     drop the asset at docs/demo.gif, and replace this comment with ![demo](docs/demo.gif) -->
+
+A real install on Linux x64 finishes in about 30 seconds:
+
+```console
+$ mise install nim@2.2.0
+mise nim@2.2.0  downloading nim-2.2.0-linux_x64.tar.xz
+mise nim@2.2.0  installing nim-2.2.0-linux_x64.tar.xz
+mise nim@2.2.0  Installed Nim 2.2.0 via official binary
+$ mise exec nim@2.2.0 -- nim --version
+Nim Compiler Version 2.2.0 [Linux: amd64]
 ```
 
 > **Installation paths / registry.** vfox-nim is a third-party plugin; mise and vfox
