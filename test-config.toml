@@ -1,2 +1,2 @@
 [env]
-_.vfox-nim = { install_method = "source" }
+_.nim = { install_method = "source" }

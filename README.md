@@ -130,7 +130,7 @@ Use the `MiseEnv` hook to configure install method in your project's `mise.toml`
 
 ```toml
 [env]
-_.vfox-nim = { install_method = "auto" }
+_.nim = { install_method = "auto" }
 ```
 
 #### Option 2: Via Environment Variable
@@ -159,7 +159,7 @@ VFOX_NIM_INSTALL_METHOD = "binary"
 ```toml
 # Option 1: Via MiseEnv hook (recommended for per-project configuration)
 [env]
-_.vfox-nim = { install_method = "auto" }
+_.nim = { install_method = "auto" }
 
 # Option 2: Via environment variable (simple approach)
 [env]
