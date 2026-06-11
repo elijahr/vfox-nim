@@ -1,0 +1,7 @@
+# macos-15-intel is a real GitHub-hosted Intel runner (macos-13 was retired
+# 2025-12-04; macos-latest is arm64). The pinned actionlint pre-commit hook
+# predates this label, so declare it here — actionlint auto-discovers this file
+# and will then accept it. Standalone/newer actionlint already knows it.
+self-hosted-runner:
+  labels:
+    - macos-15-intel

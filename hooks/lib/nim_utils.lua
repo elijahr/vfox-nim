@@ -24,18 +24,23 @@ end
 -- spell it `aarch64`. vfox/mise pass Go's `runtime.GOARCH` verbatim, which is
 -- `arm64` on Linux/ARM64 hosts too, so the `aarch64`/`arm64` branch below has
 -- to pivot on `os_name` to pick the right downstream spelling.
+--
+-- 32-bit inputs also vary by harness: vfox passes Go's GOARCH verbatim (`386`
+-- for 32-bit x86, `arm` for 32-bit ARM), while mise passes Rust's ARCH (`x86`
+-- for 32-bit x86, `arm` for 32-bit ARM). Both spellings must map correctly,
+-- so the branches below accept `386`/`x86` (-> i686) and `arm` (-> armv7).
 function M.normalize_arch(arch, os_name)
     arch = arch:lower()
     if arch == "x86_64" or arch == "amd64" then
         return "x86_64"
-    elseif arch == "i386" or arch == "i686" or arch == "x86" then
+    elseif arch == "386" or arch == "i386" or arch == "i686" or arch == "x86" then
         return "i686"
     elseif arch == "aarch64" or arch == "arm64" then
         if os_name == "macos" or os_name == "darwin" then
             return "arm64"
         end
         return "aarch64"
-    elseif arch == "armv7" or arch == "armv7l" then
+    elseif arch == "arm" or arch == "armv7" or arch == "armv7l" then
         return "armv7"
     else
         return arch

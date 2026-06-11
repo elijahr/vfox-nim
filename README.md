@@ -23,8 +23,8 @@ For platforms without official binaries (macOS, Linux ARM), the plugin uses Nim'
 | Linux x32   |        ✅         |       ✅       |      ✅      | ~30s         |
 | Linux ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
 | Linux ARMv7 |        ❌         |       ✅       |      ✅      | ~60s         |
-| Windows x64 |        ✅         |       ✅       |      ✅      | ~30s         |
-| Windows x32 |        ✅         |       ✅       |      ✅      | ~30s         |
+| Windows x64 |        ✅         |       ✅       |      ❌      | ~30s         |
+| Windows x32 |        ✅         |       ✅       |      ❌      | ~30s         |
 | macOS x64   |        ❌         |       ✅       |      ✅      | ~60s         |
 | macOS ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
 

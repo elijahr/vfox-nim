@@ -223,12 +223,38 @@ describe("vfox-nim smoke tests", function()
             assert.equal("x86_64", utils.normalize_arch("amd64", "linux"))
             assert.equal("x86_64", utils.normalize_arch("x86_64", "linux"))
             assert.equal("i686", utils.normalize_arch("x86", "linux"))
+            -- vfox passes Go's GOARCH ("386" for 32-bit x86, "arm" for 32-bit
+            -- ARM); mise passes Rust's ARCH ("x86" for 32-bit x86, "arm" for
+            -- 32-bit ARM). All must normalize to Nim's spellings.
+            assert.equal("i686", utils.normalize_arch("386", "linux"))
+            assert.equal("i686", utils.normalize_arch("386", "windows"))
+            assert.equal("i686", utils.normalize_arch("x86", "linux"))
+            assert.equal("armv7", utils.normalize_arch("arm", "linux"))
             -- 64-bit ARM normalizes to "aarch64" on Linux but "arm64" on
             -- macOS, matching Nim's nightly + tarball URL spellings.
             assert.equal("aarch64", utils.normalize_arch("arm64", "linux"))
             assert.equal("aarch64", utils.normalize_arch("aarch64", "linux"))
             assert.equal("arm64", utils.normalize_arch("arm64", "macos"))
             assert.equal("arm64", utils.normalize_arch("aarch64", "macos"))
+        end)
+
+        it("resolves 32-bit arch values to the right assets", function()
+            local utils = require("lib.nim_utils")
+            -- vfox/mise 32-bit values must normalize and then resolve to the
+            -- correct Nim distribution assets/urls.
+            assert.equal(
+                "windows_x32.zip",
+                utils.get_platform_filename("windows", utils.normalize_arch("386", "windows"))
+            )
+            assert.equal(
+                "https://nim-lang.org/download/nim-2.2.4_x32.zip",
+                utils.get_official_url("2.2.4", "windows", utils.normalize_arch("386", "windows"))
+            )
+            assert.equal("linux_x32.tar.xz", utils.get_platform_filename("linux", utils.normalize_arch("386", "linux")))
+            assert.equal(
+                "linux_armv7l.tar.xz",
+                utils.get_platform_filename("linux", utils.normalize_arch("arm", "linux"))
+            )
         end)
 
         it("detects stable versions", function()

@@ -1,0 +1,142 @@
+# yamllint disable rule:line-length
+
+name: Arch e2e
+
+# These are SLOW end-to-end legs (QEMU emulation + an Intel macOS runner), so they
+# are kept OFF the per-PR path. They run on push-to-main, manual dispatch, and a
+# weekly cron only. Every install here is binary-only (VFOX_NIM_INSTALL_METHOD=binary
+# + nim@ref:devel prebuilt nightlies) so nothing compiles from source under emulation
+# or on the extra runner.
+
+# yamllint disable rule:truthy
+on:
+  # yamllint enable rule:truthy
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - hooks/**
+      - metadata.lua
+      - .github/workflows/arch-e2e.yml
+  schedule:
+    # Weekly, Monday 06:00 UTC.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  # Emulated Linux aarch64 + armv7 via QEMU (uraimo/run-on-arch-action). Exercises
+  # the GOARCH arm/arm64 values and the normalize_arch fix against real prebuilt
+  # binaries through vfox. Binary-only: ref:devel resolves to the generic nightly
+  # binaries (aarch64 -> linux_arm64.tar.xz, armv7 -> linux_armv7l.tar.xz) and
+  # VFOX_NIM_INSTALL_METHOD=binary turns a missing binary into a hard error rather
+  # than a source compile.
+  linux_multiarch_e2e:
+    name: Linux ${{ matrix.arch }} e2e
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu22.04
+            vfox_asset: vfox_1.0.11_linux_aarch64.tar.gz
+          - arch: armv7
+            distro: ubuntu22.04
+            vfox_asset: vfox_1.0.11_linux_armv7.tar.gz
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Binary-only Nim install under emulation
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.distro }}
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          # Mount the checkout at a fixed path so the plugin source has a
+          # deterministic location inside the container (independent of the
+          # host workspace path).
+          dockerRunArgs: |
+            --volume "${{ github.workspace }}:/plugin"
+          env: |
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            VFOX_NIM_INSTALL_METHOD: binary
+          install: |
+            apt-get update
+            apt-get install -y curl xz-utils ca-certificates git
+          run: |
+            set -euo pipefail
+
+            # Install vfox from the release tarball for this arch.
+            curl -fsSL -o /tmp/vfox.tar.gz \
+              "https://github.com/version-fox/vfox/releases/download/v1.0.11/${{ matrix.vfox_asset }}"
+            tar -xzf /tmp/vfox.tar.gz -C /tmp
+            mv "/tmp/vfox_1.0.11_linux_${{ matrix.arch }}/vfox" /usr/local/bin/vfox
+            chmod +x /usr/local/bin/vfox
+            vfox --version
+
+            # Sandbox vfox state under HOME (VFOX_HOME is vfox's documented home
+            # override, the same var the integration spec sets).
+            export VFOX_HOME="$HOME/.version-fox"
+            mkdir -p "$VFOX_HOME"
+
+            # vfox add --source needs a .zip/.lua, not a directory. Build a zip of
+            # the checkout exactly like the vfox integration spec does (git archive
+            # of HEAD -> metadata.lua at the zip root), then add it. safe.directory
+            # is needed because the mounted /plugin is owned by a different uid.
+            git config --global --add safe.directory /plugin
+            git -C /plugin archive --format=zip --output=/tmp/nim.zip HEAD
+            vfox add --source /tmp/nim.zip --alias nim
+
+            # Binary-only install (ref:devel registers under the version name "devel").
+            vfox install -y nim@ref:devel
+
+            # `vfox use -g` does NOT take effect in a non-interactive shell (per the
+            # vfox integration spec), so activate a project-local .tool-versions instead:
+            # inside a dir declaring `nim devel`, `vfox activate` materializes the sdk
+            # and prepends its bin to PATH.
+            mkdir -p /tmp/proj
+            printf 'nim devel\n' > /tmp/proj/.tool-versions
+            cd /tmp/proj
+            eval "$(vfox activate bash)"
+            nim --version
+
+  # macOS x64 via mise. macos-13 (the last Intel image) is retired and
+  # macos-latest is arm64, so macos-15-intel is the only hosted x64 macOS runner.
+  # ref:devel resolves to the macosx_x64.tar.xz prebuilt nightly binary.
+  macos_x64_e2e:
+    name: macOS x64 e2e
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          install: false
+
+      - name: Binary-only Nim install on macOS x64
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISE_YES: 1
+          VFOX_NIM_INSTALL_METHOD: binary
+        run: |
+          set -euo pipefail
+
+          # Register THIS checkout as the `nim` plugin, mirroring the mise
+          # integration spec's local-plugin registration.
+          mise plugin link --force nim "$GITHUB_WORKSPACE"
+
+          # Binary-only install + activate + run, mirroring the spec's
+          # install / use / exec forms.
+          mise install nim@ref:devel
+          mise use -g nim@ref:devel
+          mise exec nim@ref:devel -- nim --version
