@@ -9,6 +9,10 @@ actionlint = "latest"
 description = "Run Lua unit tests (busted spec/) — Tiers I+II"
 run = 'PATH="$HOME/.vfox-nim-rocks/bin:$PATH" busted spec/'
 
+[tasks.test]
+description = "Run integration tests (real Nim install over the network)"
+run = 'PATH="$HOME/.vfox-nim-rocks/bin:$PATH" busted test/'
+
 [tasks.format]
 description = "Format Lua scripts"
 run = "pre-commit run --all-files"

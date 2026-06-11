@@ -42,7 +42,7 @@ mise plugin install nim https://github.com/elijahr/vfox-nim
 mise install nim@latest
 
 # Or install a specific version
-mise install nim@2.0.0
+mise install nim@2.2.0
 
 # Set as global default
 mise use -g nim@latest
@@ -69,7 +69,7 @@ A real install on Linux x64 finishes in about 30 seconds:
 $ mise install nim@2.2.0
 mise nim@2.2.0  downloading nim-2.2.0-linux_x64.tar.xz
 mise nim@2.2.0  installing nim-2.2.0-linux_x64.tar.xz
-mise nim@2.2.0  Installed Nim 2.2.0 via official binary
+mise nim@2.2.0  Official binary for linux/x86_64
 $ mise exec nim@2.2.0 -- nim --version
 Nim Compiler Version 2.2.0 [Linux: amd64]
 ```
@@ -83,7 +83,7 @@ mise install nim@latest
 # A specific version
 mise install nim@2.2.0
 
-# Newest patch within a series
+# Partial versions (mise resolves these to the newest matching release)
 mise install nim@2.2          # newest 2.2.x
 mise install nim@2            # newest 2.x
 
@@ -159,20 +159,15 @@ vfox-nim is an independent alternative to asdf's `nim` plugin
 the same author, intended as a successor for use with mise and vfox. (A separate
 [`mise-plugins/mise-nim`](https://github.com/mise-plugins/mise-nim) plugin exists; it
 is a fork of `asdf-nim` that runs under mise's legacy asdf-bash-plugin shim, not a
-native vfox plugin.) If you switch from asdf-nim to vfox-nim, two differences matter:
+native vfox plugin.)
 
-- **`NIMBLE_DIR` is no longer set per-version.** asdf-nim exports
-  `NIMBLE_DIR=<install>/nimble`, so your globally-installed nimble packages live
-  inside each Nim version's install directory. vfox-nim leaves `NIMBLE_DIR` unset
-  (shared `~/.nimble`, matching `choosenim`). After switching, reinstall your global
-  nimble tools (`nimble install -g <pkg>`) so they resolve from `~/.nimble`; the old
-  per-version packages are not deleted, just no longer on `PATH`. To keep the old
-  layout, set `NIMBLE_DIR` yourself — the plugin honors it.
-- **Switching plugins is a reinstall, not an update.** `mise plugins update` pulls
-  the installed plugin's own Git remote; it does not move you between different
-  plugins. asdf-nim is an asdf-backend plugin and vfox-nim is a vfox-backend plugin,
-  so switch with `mise plugin uninstall nim && mise plugin install nim https://github.com/elijahr/vfox-nim`
-  (for vfox: `vfox remove nim`, then re-add per the Quick Start).
+The main difference when switching: asdf-nim exports `NIMBLE_DIR=<install>/nimble`, so
+your globally-installed nimble packages live inside each Nim version's install
+directory. vfox-nim leaves `NIMBLE_DIR` unset (shared `~/.nimble`, matching
+`choosenim`). After switching, reinstall your global nimble tools
+(`nimble install -g <pkg>`) so they resolve from `~/.nimble`; the old per-version
+packages aren't deleted, just no longer on `PATH`. To keep the old layout, set
+`NIMBLE_DIR` yourself and the plugin honors it.
 
 ## GitHub Actions
 
