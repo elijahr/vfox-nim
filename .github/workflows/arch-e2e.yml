@@ -92,11 +92,16 @@ jobs:
             git -C /plugin archive --format=zip --output=/tmp/nim.zip HEAD
             vfox add --source /tmp/nim.zip --alias nim
 
-            # Binary-only install. vfox registers a `ref:devel` install under the
-            # version name "devel" (it prints "use `vfox use nim@devel`"), so set the
-            # global to @devel, THEN activate so the shell picks it up, THEN run nim.
-            vfox install nim@ref:devel
-            vfox use -g nim@devel
+            # Binary-only install (ref:devel registers under the version name "devel").
+            vfox install -y nim@ref:devel
+
+            # `vfox use -g` does NOT take effect in a non-interactive shell (per the
+            # vfox integration spec), so activate a project-local .tool-versions instead:
+            # inside a dir declaring `nim devel`, `vfox activate` materializes the sdk
+            # and prepends its bin to PATH.
+            mkdir -p /tmp/proj
+            printf 'nim devel\n' > /tmp/proj/.tool-versions
+            cd /tmp/proj
             eval "$(vfox activate bash)"
             nim --version
 
