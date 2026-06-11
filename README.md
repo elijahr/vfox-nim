@@ -16,22 +16,20 @@ Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [
 
 macOS and Linux ARM have no official Nim binaries, so the plugin uses Nim's nightly builds there, which often match stable releases.
 
-| Platform    | Official Binaries | Nightly Builds | Source Build | Install Time |
-| ----------- | :---------------: | :------------: | :----------: | ------------ |
-| Linux x64   |        ✅         |       ✅       |      ✅      | ~30s         |
-| Linux x32   |        ✅         |       ✅       |      ✅      | ~30s         |
-| Linux ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
-| Linux ARMv7 |        ❌         |       ✅       |      ✅      | ~60s         |
-| Windows x64 |        ✅         |       ✅       |      ❌      | ~30s         |
-| Windows x32 |        ✅         |       ✅       |      ❌      | ~30s         |
-| macOS x64   |        ❌         |       ✅       |      ✅      | ~60s         |
-| macOS ARM64 |        ❌         |       ✅       |      ✅      | ~60s         |
+| Platform    | Official Binaries | Nightly Builds | Source Build |
+| ----------- | :---------------: | :------------: | :----------: |
+| Linux x64   |        ✅         |       ✅       |      ✅      |
+| Linux x32   |        ✅         |       ✅       |      ✅      |
+| Linux ARM64 |        ❌         |       ✅       |      ✅      |
+| Linux ARMv7 |        ❌         |       ✅       |      ✅      |
+| Windows x64 |        ✅         |       ✅       |      ❌      |
+| Windows x32 |        ✅         |       ✅       |      ❌      |
+| macOS x64   |        ❌         |       ✅       |      ✅      |
+| macOS ARM64 |        ❌         |       ✅       |      ✅      |
 
-> **Windows.** Fully supported and CI-verified: the unit, mise-integration, and
-> vfox-integration suites run green on `windows-latest` (a real `nim` install
-> end-to-end) and the Windows legs are blocking. The one exception is the
-> source-build method — `auto` selects the prebuilt binary on Windows (see the
-> Windows note under Installation Method).
+> CI runs real end-to-end installs on Linux x64, macOS x64/arm64, Windows x64, and
+> emulated Linux arm64/armv7. The 32-bit rows and source builds on the non-x64
+> platforms should work but aren't CI-covered. Source builds aren't available on Windows.
 
 ## Quick Start
 
@@ -118,92 +116,23 @@ vfox accepts the same specs: `vfox install nim@2.2.0`, `vfox install nim@ref:dev
 
 ## Configuration
 
-The vfox-nim plugin supports custom configuration to control installation behavior.
+Control how Nim is installed with the `install_method` option:
 
-### Installation Method
+- `auto` (default): try official binaries, then nightly builds, then source.
+- `binary`: pre-built binaries only; fail if none exists for your platform.
+- `source`: always build from source. Not available on Windows.
 
-Control how Nim versions are installed. There are two ways to configure this:
-
-#### Option 1: Via `mise.toml` (Recommended)
-
-Use the `MiseEnv` hook to configure install method in your project's `mise.toml`:
+Set it per project in `mise.toml`:
 
 ```toml
 [env]
-_.nim = { install_method = "auto" }
+_.nim = { install_method = "binary" }
 ```
 
-#### Option 2: Via Environment Variable
-
-Set the `VFOX_NIM_INSTALL_METHOD` environment variable directly:
+Or as an environment variable (works with both mise and vfox):
 
 ```bash
-# In your shell or CI environment
 export VFOX_NIM_INSTALL_METHOD=binary
-
-# Or in mise.toml
-[env]
-VFOX_NIM_INSTALL_METHOD = "binary"
-```
-
-**Valid values:**
-
-| Value      | Behavior                                                                                                                         |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `"auto"`   | **(Default)** Try pre-built binaries first (official, then nightly), fall back to building from source if no binary is available |
-| `"binary"` | **Only use pre-built binaries**. Installation will fail with an error if no binary is available for your platform                |
-| `"source"` | **Only build from source**. Always downloads and compiles the source tarball                                                     |
-
-**Examples:**
-
-```toml
-# Option 1: Via MiseEnv hook (recommended for per-project configuration)
-[env]
-_.nim = { install_method = "auto" }
-
-# Option 2: Via environment variable (simple approach)
-[env]
-VFOX_NIM_INSTALL_METHOD = "binary"
-
-# Both can be used together - environment variable takes precedence
-```
-
-**Common use cases:**
-
-```toml
-# Binary-only installations (useful for CI/CD to ensure fast installs)
-[env]
-VFOX_NIM_INSTALL_METHOD = "binary"
-
-# Always build from source (useful for debugging or custom patches)
-[env]
-VFOX_NIM_INSTALL_METHOD = "source"
-
-# Default behavior - try binaries first, fall back to source
-# (no configuration needed, or explicitly set to "auto")
-```
-
-**Installation strategy by method:**
-
-- **`auto`** (default): For stable versions, tries official binaries → exact nightly match → build from source. For ref versions, tries binaries → nightly builds → error.
-- **`binary`**: Same as auto, but fails with error instead of falling back to source build.
-- **`source`**: Immediately downloads source tarball and builds (stable versions only).
-
-> **Windows note.** On Windows the plugin installs official prebuilt Nim binaries.
-> Forcing a source compile (`VFOX_NIM_INSTALL_METHOD=source`) is **not supported on
-> Windows**; `auto` correctly selects the binary install path there.
-
-**Testing your configuration:**
-
-```bash
-# See what environment variables are set
-mise env | grep VFOX_NIM
-
-# Install a version to test the configuration
-mise install nim@2.0.0
-
-# Check the installation note
-mise ls nim
 ```
 
 ### Nimble package directory (`NIMBLE_DIR`)
