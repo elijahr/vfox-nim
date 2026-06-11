@@ -20,7 +20,7 @@ describe("pre_install install_method behavior", function()
         -- Mock os.getenv
         _G.os.getenv_orig = _G.os.getenv
         _G.os.getenv = function(name)
-            if name == "VFOX_NIM_INSTALL_METHOD" then
+            if name == "NIM_INSTALL_METHOD" then
                 return nil -- Default: no env var set
             end
             if name == "HOME" then
@@ -91,7 +91,7 @@ describe("pre_install install_method behavior", function()
     describe("install_method = 'source'", function()
         before_each(function()
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "source"
                 end
                 return nil
@@ -129,7 +129,7 @@ describe("pre_install install_method behavior", function()
     describe("install_method = 'binary'", function()
         before_each(function()
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "binary"
                 end
                 if name == "HOME" then
@@ -305,10 +305,10 @@ describe("pre_install install_method behavior", function()
         end)
     end)
 
-    describe("reading VFOX_NIM_INSTALL_METHOD from environment", function()
+    describe("reading NIM_INSTALL_METHOD from environment", function()
         it("reads 'auto' from environment", function()
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "auto"
                 end
                 if name == "HOME" then
@@ -330,7 +330,7 @@ describe("pre_install install_method behavior", function()
 
         it("reads 'binary' from environment", function()
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "binary"
                 end
                 if name == "HOME" then
@@ -352,7 +352,7 @@ describe("pre_install install_method behavior", function()
 
         it("reads 'source' from environment", function()
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "source"
                 end
                 if name == "HOME" then
@@ -373,7 +373,7 @@ describe("pre_install install_method behavior", function()
         it("supports direct environment variable without MiseEnv hook", function()
             -- Simulate setting the env var directly (not through MiseEnv hook)
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "binary"
                 end
                 if name == "HOME" then

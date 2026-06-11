@@ -4,7 +4,7 @@ name: Arch e2e
 
 # These are SLOW end-to-end legs (QEMU emulation + an Intel macOS runner), so they
 # are kept OFF the per-PR path. They run on push-to-main, manual dispatch, and a
-# weekly cron only. Every install here is binary-only (VFOX_NIM_INSTALL_METHOD=binary
+# weekly cron only. Every install here is binary-only (NIM_INSTALL_METHOD=binary
 # + nim@ref:devel prebuilt nightlies) so nothing compiles from source under emulation
 # or on the extra runner.
 
@@ -30,7 +30,7 @@ jobs:
   # the GOARCH arm/arm64 values and the normalize_arch fix against real prebuilt
   # binaries through vfox. Binary-only: ref:devel resolves to the generic nightly
   # binaries (aarch64 -> linux_arm64.tar.xz, armv7 -> linux_armv7l.tar.xz) and
-  # VFOX_NIM_INSTALL_METHOD=binary turns a missing binary into a hard error rather
+  # NIM_INSTALL_METHOD=binary turns a missing binary into a hard error rather
   # than a source compile.
   linux_multiarch_e2e:
     name: Linux ${{ matrix.arch }} e2e
@@ -64,7 +64,7 @@ jobs:
             --volume "${{ github.workspace }}:/plugin"
           env: |
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            VFOX_NIM_INSTALL_METHOD: binary
+            NIM_INSTALL_METHOD: binary
           install: |
             apt-get update
             apt-get install -y curl xz-utils ca-certificates git
@@ -127,7 +127,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MISE_YES: 1
-          VFOX_NIM_INSTALL_METHOD: binary
+          NIM_INSTALL_METHOD: binary
         run: |
           set -euo pipefail
 

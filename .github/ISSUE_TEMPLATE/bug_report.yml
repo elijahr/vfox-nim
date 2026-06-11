@@ -51,7 +51,7 @@ body:
     id: install_method
     attributes:
       label: Install method
-      description: The value of VFOX_NIM_INSTALL_METHOD (or the install_method config). Leave as auto if unset.
+      description: The value of NIM_INSTALL_METHOD (or the install_method config). Leave as auto if unset.
       options:
         - auto
         - binary

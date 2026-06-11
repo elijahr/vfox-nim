@@ -6,6 +6,14 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the install-method environment variable from `VFOX_NIM_INSTALL_METHOD`
+  to `NIM_INSTALL_METHOD`. Neither mise nor vfox defines a plugin-prefixed env-var
+  convention, and the plugin is installed under the name `nim`, so the `VFOX_`
+  prefix was misleading (it also runs under mise). The `mise.toml` `install_method`
+  tool option is unchanged and remains the primary way to configure mise.
+
 ## [0.1.1]
 
 _Not yet released — the `v0.1.1` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this commit lands)._

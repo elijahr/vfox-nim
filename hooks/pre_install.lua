@@ -9,7 +9,7 @@ function PLUGIN:PreInstall(ctx)
 
     -- Get install method from environment (set by MiseEnv hook)
     -- Valid values: "auto" (default), "binary", "source"
-    local install_method = os.getenv("VFOX_NIM_INSTALL_METHOD") or "auto"
+    local install_method = os.getenv("NIM_INSTALL_METHOD") or "auto"
 
     -- Get platform information. normalize_arch needs os_name to disambiguate
     -- the aarch64/arm64 spelling (Linux uses "aarch64"; macOS uses "arm64"),

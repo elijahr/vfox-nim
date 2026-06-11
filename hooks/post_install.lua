@@ -13,7 +13,7 @@ function PLUGIN:PostInstall(ctx)
 
     -- Get install method from environment (set by MiseEnv hook or directly)
     -- Valid values: "auto" (default), "binary", "source"
-    local install_method = os.getenv("VFOX_NIM_INSTALL_METHOD") or "auto"
+    local install_method = os.getenv("NIM_INSTALL_METHOD") or "auto"
 
     -- Helper function to check if file exists
     local function file_exists(filepath)

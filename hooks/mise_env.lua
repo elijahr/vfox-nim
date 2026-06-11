@@ -19,7 +19,7 @@ function PLUGIN:MiseEnv(ctx)
     -- Return environment variable that PreInstall hook will read
     return {
         {
-            key = "VFOX_NIM_INSTALL_METHOD",
+            key = "NIM_INSTALL_METHOD",
             value = install_method,
         },
     }

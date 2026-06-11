@@ -11,7 +11,7 @@ Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [
 - Picks the fastest install for your platform: official binaries, then nightly builds, then source.
 - Runs on Linux, macOS, and Windows (x86_64, x86, arm64).
 - Installs the full toolchain: Nim, Nimble, and tools.
-- Force binary-only or source-only with `VFOX_NIM_INSTALL_METHOD`.
+- Force binary-only or source-only with `NIM_INSTALL_METHOD`.
 - Uses the shared `~/.nimble` (leaves `NIMBLE_DIR` unset, like a normal Nim install).
 
 macOS and Linux ARM have no official Nim binaries, so the plugin uses Nim's nightly builds there, which often match stable releases.
@@ -132,7 +132,7 @@ _.nim = { install_method = "binary" }
 Or as an environment variable (works with both mise and vfox):
 
 ```bash
-export VFOX_NIM_INSTALL_METHOD=binary
+export NIM_INSTALL_METHOD=binary
 ```
 
 ### Nimble package directory (`NIMBLE_DIR`)

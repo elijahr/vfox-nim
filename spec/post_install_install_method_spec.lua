@@ -20,7 +20,7 @@ describe("post_install install_method behavior", function()
         -- Mock os.getenv
         _G.os.getenv_orig = _G.os.getenv
         _G.os.getenv = function(name)
-            if name == "VFOX_NIM_INSTALL_METHOD" then
+            if name == "NIM_INSTALL_METHOD" then
                 return nil -- Default: no env var set
             end
             if name == "HOME" then
@@ -158,7 +158,7 @@ describe("post_install install_method behavior", function()
         it("uses the binary with install_method='binary'", function()
             _G.test_has_binary = true
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "binary"
                 end
                 return nil
@@ -172,7 +172,7 @@ describe("post_install install_method behavior", function()
         it("uses the binary with install_method='source'", function()
             _G.test_has_binary = true
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "source"
                 end
                 return nil
@@ -189,7 +189,7 @@ describe("post_install install_method behavior", function()
             _G.test_has_binary = false
             _G.test_has_build_script = true
             _G.os.getenv = function(name)
-                if name == "VFOX_NIM_INSTALL_METHOD" then
+                if name == "NIM_INSTALL_METHOD" then
                     return "binary"
                 end
                 return nil

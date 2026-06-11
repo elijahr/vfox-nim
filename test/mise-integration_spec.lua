@@ -380,7 +380,7 @@ describe("Mise Plugin Integration Tests", function()
         setenv("MISE_CONFIG_DIR", MISE_TEST_DIR .. "/config")
         setenv("MISE_DEBUG", "1")
         setenv("MISE_EXPERIMENTAL", "1")
-        setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+        setenv("NIM_INSTALL_METHOD", "binary")
 
         print("✓ Sandboxed mise environment: " .. MISE_TEST_DIR)
         print("✓ Using install_method='binary' for tests")
@@ -647,7 +647,7 @@ describe("Mise Plugin Integration Tests", function()
         it("routes [env] _.nim install_method to the MiseEnv hook (the _.vfox-nim wiring)", function()
             -- Regression lock for the _.vfox-nim bug: mise must route a project's
             -- `[env] _.nim = { install_method = "source" }` into the plugin's MiseEnv
-            -- hook, which emits VFOX_NIM_INSTALL_METHOD. Driving a real `mise env`
+            -- hook, which emits NIM_INSTALL_METHOD. Driving a real `mise env`
             -- (not the unit test, which calls the hook directly) proves the wiring.
             -- Use "source" (not the ambient "binary" from setup) and unset the ambient
             -- value so a pass can only come from the project _.nim table.
@@ -657,10 +657,10 @@ describe("Mise Plugin Integration Tests", function()
                 test_dir .. "/mise.toml",
                 '[tools]\nnim = "2.2.4"\n\n[env]\n_.nim = { install_method = "source" }\n'
             )
-            local output, success = exec("cd '" .. test_dir .. "' && unset VFOX_NIM_INSTALL_METHOD && mise env 2>&1")
+            local output, success = exec("cd '" .. test_dir .. "' && unset NIM_INSTALL_METHOD && mise env 2>&1")
             assert.is_true(success, "mise env failed in _.nim project dir: " .. output)
             assert.is_truthy(
-                output:find("VFOX_NIM_INSTALL_METHOD=source", 1, true),
+                output:find("NIM_INSTALL_METHOD=source", 1, true),
                 "_.nim did not route install_method to MiseEnv. Output: " .. output
             )
             -- Regression lock: the WRONG key `_.vfox-nim` must NOT set the var.
@@ -668,10 +668,10 @@ describe("Mise Plugin Integration Tests", function()
                 test_dir .. "/mise.toml",
                 '[tools]\nnim = "2.2.4"\n\n[env]\n_.vfox-nim = { install_method = "source" }\n'
             )
-            local bad_output = exec("cd '" .. test_dir .. "' && unset VFOX_NIM_INSTALL_METHOD && mise env 2>&1")
+            local bad_output = exec("cd '" .. test_dir .. "' && unset NIM_INSTALL_METHOD && mise env 2>&1")
             assert.is_falsy(
-                bad_output:find("VFOX_NIM_INSTALL_METHOD=source", 1, true),
-                "_.vfox-nim (wrong key) must NOT set VFOX_NIM_INSTALL_METHOD. Output: " .. bad_output
+                bad_output:find("NIM_INSTALL_METHOD=source", 1, true),
+                "_.vfox-nim (wrong key) must NOT set NIM_INSTALL_METHOD. Output: " .. bad_output
             )
             raw_execute("rm -rf '" .. test_dir .. "'")
         end)
@@ -725,10 +725,10 @@ describe("Mise Plugin Integration Tests", function()
     describe("Error Handling", function()
         it("should fail when binary install is forced but no binary is available", function()
             -- Try to install a very old version that likely doesn't have prebuilt binaries
-            setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+            setenv("NIM_INSTALL_METHOD", "binary")
             local output, success = exec("mise install nim@0.8.14 2>&1")
             -- Reset the env var
-            setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+            setenv("NIM_INSTALL_METHOD", "binary")
 
             -- Should fail because no binary is available for this old version
             assert.is_false(success, "Installation should have failed but succeeded: " .. output)

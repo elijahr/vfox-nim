@@ -388,7 +388,7 @@ describe("vfox Plugin Integration Tests", function()
         print("✓ Sandboxed vfox home: " .. VFOX_TEST_HOME)
 
         -- Set install method for faster tests
-        setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+        setenv("NIM_INSTALL_METHOD", "binary")
         print("✓ Using install_method='binary' for tests")
 
         -- Add the plugin using git archive. All vfox calls carry build_env_prefix()
@@ -639,12 +639,12 @@ describe("vfox Plugin Integration Tests", function()
     end)
 
     describe("Install Methods", function()
-        it("should install with VFOX_NIM_INSTALL_METHOD='auto'", function()
+        it("should install with NIM_INSTALL_METHOD='auto'", function()
             exec("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
-            setenv("VFOX_NIM_INSTALL_METHOD", "auto")
+            setenv("NIM_INSTALL_METHOD", "auto")
             local output, success = exec("vfox install --yes nim@2.2.4 2>&1")
-            setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+            setenv("NIM_INSTALL_METHOD", "binary")
 
             assert.is_true(success, "Installation with install_method='auto' failed: " .. output)
 
@@ -652,7 +652,7 @@ describe("vfox Plugin Integration Tests", function()
             assert.matches("2%.2%.4", list_output)
         end)
 
-        it("should install with VFOX_NIM_INSTALL_METHOD='source'", function()
+        it("should install with NIM_INSTALL_METHOD='source'", function()
             -- Source compilation is not supported on Windows: Windows users get official
             -- prebuilt binaries, and `auto` correctly selects the binary path. Forcing a
             -- source build would compile Nim from C sources via MinGW/koch, which is out of
@@ -664,9 +664,9 @@ describe("vfox Plugin Integration Tests", function()
             -- Note: This test can be very slow as it builds from source
             exec("echo 'y' | vfox uninstall --yes nim@2.2.4 >/dev/null 2>&1 || true")
 
-            setenv("VFOX_NIM_INSTALL_METHOD", "source")
+            setenv("NIM_INSTALL_METHOD", "source")
             local output, success = exec("vfox install --yes nim@2.2.4 2>&1")
-            setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+            setenv("NIM_INSTALL_METHOD", "binary")
 
             assert.is_true(success, "Installation with install_method='source' failed: " .. output)
 
@@ -678,9 +678,9 @@ describe("vfox Plugin Integration Tests", function()
     describe("Error Handling", function()
         it("should fail when binary install is forced but no binary is available", function()
             -- Try to install a very old version that likely doesn't have prebuilt binaries
-            setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+            setenv("NIM_INSTALL_METHOD", "binary")
             local output, success = exec("vfox install --yes nim@0.8.14 2>&1")
-            setenv("VFOX_NIM_INSTALL_METHOD", "binary")
+            setenv("NIM_INSTALL_METHOD", "binary")
 
             -- Should fail because no binary is available for this old version
             assert.is_false(success, "Installation should have failed but succeeded: " .. output)

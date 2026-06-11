@@ -31,15 +31,15 @@ describe("mise_env hook", function()
             ctx.options = {}
             local result = PLUGIN:MiseEnv(ctx)
 
-            -- Find VFOX_NIM_INSTALL_METHOD in result
+            -- Find NIM_INSTALL_METHOD in result
             local found = false
             for _, env_var in ipairs(result) do
-                if env_var.key == "VFOX_NIM_INSTALL_METHOD" then
+                if env_var.key == "NIM_INSTALL_METHOD" then
                     assert.equal("auto", env_var.value)
                     found = true
                 end
             end
-            assert.is_true(found, "Should set VFOX_NIM_INSTALL_METHOD")
+            assert.is_true(found, "Should set NIM_INSTALL_METHOD")
         end)
 
         it("accepts 'auto' as install_method", function()
@@ -49,7 +49,7 @@ describe("mise_env hook", function()
 
             local found = false
             for _, env_var in ipairs(result) do
-                if env_var.key == "VFOX_NIM_INSTALL_METHOD" then
+                if env_var.key == "NIM_INSTALL_METHOD" then
                     assert.equal("auto", env_var.value)
                     found = true
                 end
@@ -64,7 +64,7 @@ describe("mise_env hook", function()
 
             local found = false
             for _, env_var in ipairs(result) do
-                if env_var.key == "VFOX_NIM_INSTALL_METHOD" then
+                if env_var.key == "NIM_INSTALL_METHOD" then
                     assert.equal("binary", env_var.value)
                     found = true
                 end
@@ -79,7 +79,7 @@ describe("mise_env hook", function()
 
             local found = false
             for _, env_var in ipairs(result) do
-                if env_var.key == "VFOX_NIM_INSTALL_METHOD" then
+                if env_var.key == "NIM_INSTALL_METHOD" then
                     assert.equal("source", env_var.value)
                     found = true
                 end
