@@ -92,11 +92,12 @@ jobs:
             git -C /plugin archive --format=zip --output=/tmp/nim.zip HEAD
             vfox add --source /tmp/nim.zip --alias nim
 
-            # Binary-only install + activate + run, mirroring the spec's
-            # install / `eval "$(vfox activate bash)"` / `vfox use -g` forms.
+            # Binary-only install. vfox registers a `ref:devel` install under the
+            # version name "devel" (it prints "use `vfox use nim@devel`"), so set the
+            # global to @devel, THEN activate so the shell picks it up, THEN run nim.
             vfox install nim@ref:devel
+            vfox use -g nim@devel
             eval "$(vfox activate bash)"
-            vfox use -g nim@ref:devel
             nim --version
 
   # macOS x64 via mise. macos-13 (the last Intel image) is retired and
