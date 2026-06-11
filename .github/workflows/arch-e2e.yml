@@ -84,10 +84,13 @@ jobs:
             export VFOX_HOME="$HOME/.version-fox"
             mkdir -p "$VFOX_HOME"
 
-            # Register THIS checkout as the `nim` plugin, mirroring the vfox
-            # integration spec's `vfox add --source ... --alias nim` form. The
-            # source here is the mounted /plugin directory instead of a git zip.
-            vfox add --source /plugin --alias nim
+            # vfox add --source needs a .zip/.lua, not a directory. Build a zip of
+            # the checkout exactly like the vfox integration spec does (git archive
+            # of HEAD -> metadata.lua at the zip root), then add it. safe.directory
+            # is needed because the mounted /plugin is owned by a different uid.
+            git config --global --add safe.directory /plugin
+            git -C /plugin archive --format=zip --output=/tmp/nim.zip HEAD
+            vfox add --source /tmp/nim.zip --alias nim
 
             # Binary-only install + activate + run, mirroring the spec's
             # install / `eval "$(vfox activate bash)"` / `vfox use -g` forms.
