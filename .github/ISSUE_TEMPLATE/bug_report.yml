@@ -1,0 +1,90 @@
+name: Bug Report
+description: Report something that is not working correctly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please fill out the sections
+        below so we can understand and reproduce the problem.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect to happen instead?
+      placeholder: "I expected `mise install nim@2.0.0` to succeed, but it failed with ..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runner
+    attributes:
+      label: mise or vfox?
+      description: Which tool were you using to run the plugin?
+      options:
+        - mise
+        - vfox
+        - both
+    validations:
+      required: true
+
+  - type: input
+    id: os_arch
+    attributes:
+      label: OS and architecture
+      description: Operating system and CPU architecture.
+      placeholder: "macOS 15.2 / arm64  (or: Ubuntu 24.04 / amd64, Windows 11 / x64)"
+    validations:
+      required: true
+
+  - type: input
+    id: nim_version
+    attributes:
+      label: Nim version requested
+      description: The Nim version or ref you were trying to install.
+      placeholder: "2.0.0  (or: latest, stable, a git ref)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      description: The value of VFOX_NIM_INSTALL_METHOD (or the install_method config). Leave as auto if unset.
+      options:
+        - auto
+        - binary
+        - source
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Plugin version or commit
+      description: vfox-nim version (see metadata.lua) or the commit you have installed.
+      placeholder: "0.1.1  (or a commit hash)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug.
+      placeholder: |
+        1. mise plugin install nim https://github.com/elijahr/vfox-nim
+        2. mise install nim@2.0.0
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Paste any relevant error messages or output. Verbose output (e.g. `mise -v install ...`) is especially helpful.
+      render: shell
+    validations:
+      required: false
