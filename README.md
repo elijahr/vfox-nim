@@ -290,10 +290,10 @@ jobs:
         run: |
           $ProgressPreference = 'SilentlyContinue'
           Invoke-WebRequest https://nim-lang.org/download/dlls.zip -OutFile dlls.zip
-          Expand-Archive dlls.zip -DestinationPath "$Env:GITHUB_WORKSPACE\nim-dlls" -Force
-          "$Env:GITHUB_WORKSPACE\nim-dlls" >> $Env:GITHUB_PATH
-          Invoke-WebRequest https://curl.se/ca/cacert.pem -OutFile "$Env:GITHUB_WORKSPACE\cacert.pem"
-          "SSL_CERT_FILE=$Env:GITHUB_WORKSPACE\cacert.pem" >> $Env:GITHUB_ENV
+          Expand-Archive dlls.zip -DestinationPath "$env:GITHUB_WORKSPACE\nim-dlls" -Force
+          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\nim-dlls"
+          Invoke-WebRequest https://curl.se/ca/cacert.pem -OutFile "$env:GITHUB_WORKSPACE\cacert.pem"
+          Add-Content $env:GITHUB_ENV "SSL_CERT_FILE=$env:GITHUB_WORKSPACE\cacert.pem"
 
       - name: Build and test
         shell: bash
