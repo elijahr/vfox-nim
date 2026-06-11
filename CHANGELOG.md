@@ -10,8 +10,36 @@ All notable changes to vfox-nim are documented here. Format follows
 
 _Not yet released — the `v0.1.1` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this commit lands)._
 
+### Added
+
+- Multi-arch end-to-end CI (`arch-e2e.yml`): binary-only Nim installs on emulated
+  Linux `aarch64` and `armv7` (vfox under `uraimo/run-on-arch-action`) and on macOS
+  x64 (`macos-15-intel` via mise). Runs on push-to-main, manual dispatch, and a
+  weekly cron (kept off the per-PR path).
+- README: status badges, an install demo placeholder plus a `console` transcript,
+  a scannable feature list, a "Installing versions" section (latest / specific /
+  partial-series / `ref:devel` / branches / commits / `.nim-version` / `GITHUB_TOKEN`),
+  and a "GitHub Actions" usage guide including the Windows Nim DLL setup.
+- Community infrastructure: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+  bug-report and feature-request issue forms, and a pull-request template.
+
+### Changed
+
+- README platform table: the Windows rows no longer claim source-build support
+  (the plugin installs prebuilt binaries on Windows and does not build from source
+  there); the Source Build column is marked unsupported for the Windows rows.
+- README now presents vfox-nim explicitly as an independent third-party plugin
+  installed from this repository under a local plugin name, rather than as a
+  registry-provided `nim`.
+
 ### Fixed
 
+- `normalize_arch` now also handles the 32-bit values vfox/mise actually emit: Go's
+  `GOARCH` `386` (vfox, 32-bit x86) maps to `i686`, and `arm` (both tools, 32-bit ARM)
+  maps to `armv7`. Previously only `i386`/`i686`/`x86` and `armv7`/`armv7l` were
+  matched — values neither tool emits for those targets — so Windows/Linux x32 (under
+  vfox) and Linux ARMv7 (under both) failed to resolve a binary. Unit tests now assert
+  the real emitted values through to the resolved asset URLs.
 - `normalize_arch` is now OS-aware: it returns `aarch64` for both
   `aarch64` and `arm64` input on Linux (matching Nim's nightly +
   source tarball naming) and keeps `arm64` on macOS. The prior
