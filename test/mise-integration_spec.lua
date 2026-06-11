@@ -605,10 +605,15 @@ describe("Mise Plugin Integration Tests", function()
             )
             assert.is_true(success, "NIMBLE_DIR preservation query failed: " .. (raw or ""))
             local got = normalize_sep((raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
-            assert.are.equal(
-                normalize_sep(sentinel),
-                got,
-                "plugin must preserve a user-set NIMBLE_DIR; expected " .. sentinel .. " got: " .. got
+            -- On Windows, `mise exec` round-trips the msys2 POSIX sentinel through a
+            -- native path (/tmp/... -> D:/a/_temp/msys64/tmp/...), so the full strings
+            -- differ even though it is the same directory. Compare the unique trailing
+            -- segment: it proves the user's value survived, since a plugin-injected
+            -- NIMBLE_DIR (e.g. <install>/nimble) would not contain it.
+            local unique = normalize_sep(sentinel):match("([^/]+)$")
+            assert.is_truthy(
+                got:find(unique, 1, true),
+                "plugin must preserve a user-set NIMBLE_DIR; expected to contain " .. unique .. " got: " .. got
             )
         end)
     end)
