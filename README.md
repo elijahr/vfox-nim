@@ -84,6 +84,46 @@ Nim Compiler Version 2.2.0 [Linux: amd64]
 > `vfox add nim` with no `--source`) do NOT install this plugin — they resolve through
 > the registries to a different plugin, or fail.
 
+## Installing versions
+
+```bash
+# Latest stable release
+mise install nim@latest
+
+# A specific version
+mise install nim@2.2.0
+
+# Newest patch within a series
+mise install nim@2.2          # newest 2.2.x
+mise install nim@2            # newest 2.x
+
+# Nim's development branch — fetched as a prebuilt nightly binary when one exists
+# for your platform, otherwise built from source
+mise install nim@ref:devel
+
+# Any Nim branch, or a specific commit
+mise install nim@ref:version-2-2
+mise install nim@ref:1a2b3c4
+```
+
+`ref:` specs use a prebuilt nightly binary when one is available for your platform, and
+otherwise build from source. A bare branch name (`mise install nim@devel`) also works, but
+always builds from source.
+
+Pin a project with a version file — the plugin reads `.nim-version`, and mise's own
+`mise.toml` / `.tool-versions` work too:
+
+```bash
+echo "2.2.0" > .nim-version
+mise install            # installs the version named in .nim-version
+```
+
+> **GitHub API rate limits.** vfox-nim queries the GitHub API to resolve versions and
+> nightly builds. Behind a shared IP or in CI, set `GITHUB_TOKEN` to avoid rate-limit
+> errors (`export GITHUB_TOKEN=...`, or `${{ secrets.GITHUB_TOKEN }}` in Actions).
+
+vfox accepts the same specs: `vfox install nim@2.2.0`, `vfox install nim@ref:devel`, and so on.
+
 ## Configuration
 
 The vfox-nim plugin supports custom configuration to control installation behavior.
@@ -212,6 +252,57 @@ native vfox plugin.) If you switch from asdf-nim to vfox-nim, two differences ma
   plugins. asdf-nim is an asdf-backend plugin and vfox-nim is a vfox-backend plugin,
   so switch with `mise plugin uninstall nim && mise plugin install nim https://github.com/elijahr/vfox-nim`
   (for vfox: `vfox remove nim`, then re-add per the Quick Start).
+
+## GitHub Actions
+
+Install Nim through mise + vfox-nim in a workflow. This runs on Linux, macOS, and Windows:
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up mise
+        uses: jdx/mise-action@v2
+
+      - name: Install Nim via vfox-nim
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # avoid GitHub API rate limits
+        run: |
+          mise plugin install nim https://github.com/elijahr/vfox-nim
+          mise use nim@2.2.0
+          mise exec -- nim --version
+
+      # On Windows, Nim and Nimble are dynamically linked against OpenSSL and PCRE.
+      # Install Nim's DLL bundle (plus a CA bundle for HTTPS) so `nimble` works.
+      - name: Install Nim runtime DLLs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://nim-lang.org/download/dlls.zip -OutFile dlls.zip
+          Expand-Archive dlls.zip -DestinationPath "$Env:GITHUB_WORKSPACE\nim-dlls" -Force
+          "$Env:GITHUB_WORKSPACE\nim-dlls" >> $Env:GITHUB_PATH
+          Invoke-WebRequest https://curl.se/ca/cacert.pem -OutFile "$Env:GITHUB_WORKSPACE\cacert.pem"
+          "SSL_CERT_FILE=$Env:GITHUB_WORKSPACE\cacert.pem" >> $Env:GITHUB_ENV
+
+      - name: Build and test
+        shell: bash
+        run: mise exec -- nimble test
+```
+
+`jdx/mise-action` installs and activates mise. The Windows DLL step mirrors what
+[`nim-lang/setup-nimble-action`](https://github.com/nim-lang/setup-nimble-action) does —
+without those DLLs, `nimble` operations that use HTTPS fail with missing-DLL errors; skip
+the step if your build never invokes nimble's networking.
 
 ## Development
 
