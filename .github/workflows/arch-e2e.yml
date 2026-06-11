@@ -74,8 +74,8 @@ jobs:
             # Install vfox from the release tarball for this arch.
             curl -fsSL -o /tmp/vfox.tar.gz \
               "https://github.com/version-fox/vfox/releases/download/v1.0.11/${{ matrix.vfox_asset }}"
-            tar -xzf /tmp/vfox.tar.gz -C /tmp vfox
-            mv /tmp/vfox /usr/local/bin/vfox
+            tar -xzf /tmp/vfox.tar.gz -C /tmp
+            mv "/tmp/vfox_1.0.11_linux_${{ matrix.arch }}/vfox" /usr/local/bin/vfox
             chmod +x /usr/local/bin/vfox
             vfox --version
 
@@ -124,7 +124,7 @@ jobs:
 
           # Register THIS checkout as the `nim` plugin, mirroring the mise
           # integration spec's local-plugin registration.
-          mise plugin install --force nim "$GITHUB_WORKSPACE"
+          mise plugin link --force nim "$GITHUB_WORKSPACE"
 
           # Binary-only install + activate + run, mirroring the spec's
           # install / use / exec forms.
