@@ -27,9 +27,9 @@ brew install luajit luarocks            # macOS; use your package manager elsewh
 # 3. Provision a durable Lua 5.1-ABI toolchain (busted + luacheck) OUTSIDE /tmp
 #    so it survives reboots. LuaJIT is the Lua 5.1-ABI interpreter the suite runs
 #    green under (~0.5s).
-luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
+luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit 2>/dev/null || echo /usr)" \
   --tree "$HOME/.vfox-nim-rocks" install busted
-luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
+luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit 2>/dev/null || echo /usr)" \
   --tree "$HOME/.vfox-nim-rocks" install luacheck
 
 # 4. Link the plugin for local development.
@@ -43,8 +43,8 @@ test that downloads and runs a real Nim toolchain over the network.
 
 ```bash
 # Fast unit suite (Tiers I+II — mocked wiring + install-logic).
-# The rocks-tree bin must be on PATH so `busted` resolves.
-PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run test-unit
+# (`mise run test-unit` already puts the rocks-tree bin on PATH for busted.)
+mise run test-unit
 
 # Install-smoke test (real Nim install over the network).
 mise run test

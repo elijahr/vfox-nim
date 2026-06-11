@@ -288,6 +288,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $ProgressPreference = 'SilentlyContinue'
           Invoke-WebRequest https://nim-lang.org/download/dlls.zip -OutFile dlls.zip
           Expand-Archive dlls.zip -DestinationPath "$Env:GITHUB_WORKSPACE\nim-dlls" -Force
           "$Env:GITHUB_WORKSPACE\nim-dlls" >> $Env:GITHUB_PATH
