@@ -536,6 +536,26 @@ describe("vfox Plugin Integration Tests", function()
             local nimble_dir = normalize_sep((nimble_dir_raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
             assert.are.equal("", nimble_dir, "plugin must not inject NIMBLE_DIR on activation; got: " .. nimble_dir)
         end)
+
+        it("preserves a user-set NIMBLE_DIR across activation (does not clobber it)", function()
+            -- Complement to the no-inject test: a NIMBLE_DIR the user exports must be
+            -- left untouched by env_keys. The harness scrubs ambient NIMBLE_DIR, so we
+            -- export the sentinel INSIDE the activated command, after build_env_prefix's
+            -- `unset NIMBLE_DIR` runs. If activation survives it unchanged, echo returns
+            -- exactly the sentinel.
+            local sentinel = tmpname() .. "-my-nimble"
+            local inner = "export NIMBLE_DIR='"
+                .. sentinel
+                .. '\'; eval "$(vfox activate bash)"; echo "NIMBLE_DIR=[$NIMBLE_DIR]"'
+            local raw, success = exec_with_nim(inner)
+            assert.is_true(success, "activation with user NIMBLE_DIR failed: " .. tostring(raw))
+            local got = normalize_sep((raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
+            assert.are.equal(
+                normalize_sep(sentinel),
+                got,
+                "plugin must preserve a user-set NIMBLE_DIR; expected " .. sentinel .. " got: " .. got
+            )
+        end)
     end)
 
     describe("Configuration Files", function()
@@ -575,6 +595,30 @@ describe("vfox Plugin Integration Tests", function()
             assert.is_truthy(
                 output:lower():find("argparse", 1, true),
                 "argparse not reported as installed by nimble. Output: " .. output
+            )
+        end)
+
+        it("respects project-local nimbledeps when NIMBLE_DIR is unset", function()
+            -- With the plugin active (NIMBLE_DIR unset) and a `nimbledeps/` dir present,
+            -- nimble must use ./nimbledeps as its package dir instead of ~/.nimble.
+            -- Deterministic, zero-network proof: `nimble --offline -y list -i` touches
+            -- the package DB, which materializes ./nimbledeps/pkgs2 only when nimbledeps
+            -- auto-detection fires.
+            local inner = table.concat({
+                "mkdir -p nimbledeps",
+                'printf \'version = "0.1.0"\\nauthor = "t"\\ndescription = "t"\\nlicense = "MIT"\\n\' > proj.nimble',
+                "nimble --offline -y list -i >/dev/null 2>&1 || true",
+                "( test -d nimbledeps/pkgs2 || test -d nimbledeps/pkgs ) && echo NIMBLEDEPS_OK || echo NIMBLEDEPS_MISSING",
+            }, " && ")
+            local output, success = exec_with_nim(inner)
+            assert.is_true(success, "nimbledeps probe command failed: " .. output)
+            assert.is_truthy(
+                output:find("NIMBLEDEPS_OK", 1, true),
+                "nimble did not use project-local nimbledeps. Output: " .. output
+            )
+            assert.is_falsy(
+                output:find("NIMBLEDEPS_MISSING", 1, true),
+                "nimble ignored project-local nimbledeps. Output: " .. output
             )
         end)
     end)

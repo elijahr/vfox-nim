@@ -221,6 +221,33 @@ jobs:
 without those DLLs, `nimble` operations that use HTTPS fail with missing-DLL errors; skip
 the step if your build never invokes nimble's networking.
 
+### With vfox instead of mise
+
+mise is the simplest path in CI (the `jdx/mise-action` above). vfox has no
+first-party setup action, so install it per runner OS, then add the plugin and
+activate it within a single step (each step is a fresh shell):
+
+```yaml
+- name: Install Nim via vfox
+  shell: bash
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  run: |
+    # Install vfox (Linux shown; on macOS: `brew install vfox`, on Windows: `scoop install vfox`).
+    echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
+    sudo apt-get update && sudo apt-get install -y vfox
+
+    vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
+    vfox install nim@2.2.0
+
+    # Activate within this step and run your build (PATH does not carry to later steps):
+    echo "nim 2.2.0" > .tool-versions
+    eval "$(vfox activate bash)"
+    nim --version
+```
+
+On Windows, the same Nim DLL step from the mise example applies.
+
 ## Development
 
 ```bash

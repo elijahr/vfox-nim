@@ -591,6 +591,26 @@ describe("Mise Plugin Integration Tests", function()
                 "HOME unexpectedly inside the per-version install dir: " .. home
             )
         end)
+
+        it("preserves a user-set NIMBLE_DIR (does not clobber it)", function()
+            -- Complement to the no-inject test: a NIMBLE_DIR the user exports must
+            -- survive `mise exec nim@2.2.4`. Set the sentinel INSIDE the command (after
+            -- build_env_prefix's unset). If the plugin injected its own NIMBLE_DIR it
+            -- would override the sentinel and this would FAIL.
+            local sentinel = make_temp_dir() .. "-my-nimble"
+            local raw, success = exec(
+                "export NIMBLE_DIR='"
+                    .. sentinel
+                    .. "' && mise exec nim@2.2.4 -- sh -c 'echo \"NIMBLE_DIR=[$NIMBLE_DIR]\"' 2>&1"
+            )
+            assert.is_true(success, "NIMBLE_DIR preservation query failed: " .. (raw or ""))
+            local got = normalize_sep((raw or ""):match("NIMBLE_DIR=%[([^%]]*)%]") or "")
+            assert.are.equal(
+                normalize_sep(sentinel),
+                got,
+                "plugin must preserve a user-set NIMBLE_DIR; expected " .. sentinel .. " got: " .. got
+            )
+        end)
     end)
 
     describe("Configuration Files", function()
@@ -617,6 +637,38 @@ describe("Mise Plugin Integration Tests", function()
 
             raw_execute("rm -rf '" .. test_dir .. "'")
             assert.is_true(has_config, "Neither mise.toml nor .tool-versions created with correct content")
+        end)
+
+        it("routes [env] _.nim install_method to the MiseEnv hook (the _.vfox-nim wiring)", function()
+            -- Regression lock for the _.vfox-nim bug: mise must route a project's
+            -- `[env] _.nim = { install_method = "source" }` into the plugin's MiseEnv
+            -- hook, which emits VFOX_NIM_INSTALL_METHOD. Driving a real `mise env`
+            -- (not the unit test, which calls the hook directly) proves the wiring.
+            -- Use "source" (not the ambient "binary" from setup) and unset the ambient
+            -- value so a pass can only come from the project _.nim table.
+            local test_dir = make_temp_dir()
+            raw_execute("mkdir -p '" .. test_dir .. "'")
+            write_file(
+                test_dir .. "/mise.toml",
+                '[tools]\nnim = "2.2.4"\n\n[env]\n_.nim = { install_method = "source" }\n'
+            )
+            local output, success = exec("cd '" .. test_dir .. "' && unset VFOX_NIM_INSTALL_METHOD && mise env 2>&1")
+            assert.is_true(success, "mise env failed in _.nim project dir: " .. output)
+            assert.is_truthy(
+                output:find("VFOX_NIM_INSTALL_METHOD=source", 1, true),
+                "_.nim did not route install_method to MiseEnv. Output: " .. output
+            )
+            -- Regression lock: the WRONG key `_.vfox-nim` must NOT set the var.
+            write_file(
+                test_dir .. "/mise.toml",
+                '[tools]\nnim = "2.2.4"\n\n[env]\n_.vfox-nim = { install_method = "source" }\n'
+            )
+            local bad_output = exec("cd '" .. test_dir .. "' && unset VFOX_NIM_INSTALL_METHOD && mise env 2>&1")
+            assert.is_falsy(
+                bad_output:find("VFOX_NIM_INSTALL_METHOD=source", 1, true),
+                "_.vfox-nim (wrong key) must NOT set VFOX_NIM_INSTALL_METHOD. Output: " .. bad_output
+            )
+            raw_execute("rm -rf '" .. test_dir .. "'")
         end)
     end)
 
