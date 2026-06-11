@@ -53,7 +53,7 @@ body:
       label: Install method
       description: The value of VFOX_NIM_INSTALL_METHOD (or the install_method config). Leave as auto if unset.
       options:
-        - auto (default)
+        - auto
         - binary
         - source
     validations:
