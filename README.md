@@ -36,16 +36,13 @@ macOS and Linux ARM have no official Nim binaries, so the plugin uses Nim's nigh
 ### With mise
 
 ```bash
+# Simplest: install through mise's vfox backend (no plugin-install step, no registry).
+# `nim` lands on your PATH afterwards.
+mise use -g vfox:elijahr/vfox-nim@2.2.0       # or @latest
+
+# Prefer a plain `nim` name in your config? Register the plugin under it first:
 mise plugin install nim https://github.com/elijahr/vfox-nim
-
-# Install latest Nim
-mise install nim@latest
-
-# Or install a specific version
-mise install nim@2.2.0
-
-# Set as global default
-mise use -g nim@latest
+mise use -g nim@latest                        # then nim@<version> works
 ```
 
 ### With vfox
