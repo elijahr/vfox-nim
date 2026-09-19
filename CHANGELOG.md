@@ -22,6 +22,9 @@ All notable changes to vfox-nim are documented here. Format follows
 - Cross-platform archive restructuring in `PostInstall` using native `cmd.exe` commands (`dir /b /ad`, `xcopy`, `rmdir`) on Windows instead of POSIX `find | head` pipelines.
 - Windows user home detection and directory creation in `lib/nim_utils.lua` supporting `USERPROFILE` and `LOCALAPPDATA`.
 - Fixed loop variable reassignment in `M.dump` for Lua 5.4+ compatibility and added nil guard on `io.popen` in `get_version_commit_info`.
+- Removed `finish.exe` execution in Windows `PostInstall` to eliminate headless CI hangs and registry mutations.
+
+## [0.1.3] - 2026-09-19
 
 ## [0.1.2]
 
