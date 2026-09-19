@@ -166,7 +166,7 @@ function PLUGIN:PostInstall(ctx)
         if is_windows and file_exists(path .. "/finish.exe") then
             print("Running Windows post-install setup (finish.exe)...")
             print("This will configure PATH and check for C compiler (MinGW)")
-            local success, _ = exec(win_exec_str('"' .. native_path(path .. "/finish.exe") .. '"'))
+            local success, _ = exec(win_exec_str('"' .. native_path(path .. "/finish.exe") .. '" -y'))
             if not success then
                 print("Warning: finish.exe failed, but this is not critical")
                 print("You may need to manually install MinGW for compiling Nim code")
