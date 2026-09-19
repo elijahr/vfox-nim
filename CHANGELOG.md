@@ -6,6 +6,23 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Dry-run simulation mode (`NIM_DRY_RUN=1`) and `mise run doctor [version]` task: Reports resolved download URL, platform, install method, and resolution rationale without downloading archives or altering system files (closes #6).
+- Out-of-the-box compiler module resolution: Configures `path = "$nim"` in `config/nim.cfg` and creates a relative `lib/compiler -> ../compiler` symlink on Unix during `PostInstall`. Allows importing compiler internals (such as `import compiler/ast`, `import compiler/options`, `import compiler/parser`) out of the box across all installations (releases, nightlies, and source builds) without manual `--path` flags or triggering Nimble to download and recompile the Nim compiler from source.
+- Fallback stable version catalog in `Available` hook when the GitHub API is rate-limited or offline.
+- Unit test suite in `spec/compiler_paths_spec.lua` covering `nim.cfg` updates and symlink handling.
+
+### Fixed
+
+- Hardened Windows source bootstrap path in `build_from_source`: OS-aware config directory creation (`if not exist ... mkdir`) under `cmd.exe` alongside existing `build_all.bat` and `koch boot` support (closes #4).
+- Safe JSON parsing (`pcall(json.decode)`) and version string validation in `lib/nim_utils.lua` to guard against malformed API responses and command injection.
+- Preserved hidden dotfiles during POSIX archive restructuring using `cp -R "$dir/."` to ensure complete parity with Windows `xcopy /H`.
+- Hardened `ctx.options` access with `pcall` across `MiseEnv`, `PreInstall`, and `PostInstall` hooks, preventing strict Lua userdata `__index` exceptions when options are omitted.
+- Cross-platform archive restructuring in `PostInstall` using native `cmd.exe` commands (`dir /b /ad`, `xcopy`, `rmdir`) on Windows instead of POSIX `find | head` pipelines.
+- Windows user home detection and directory creation in `lib/nim_utils.lua` supporting `USERPROFILE` and `LOCALAPPDATA`.
+- Fixed loop variable reassignment in `M.dump` for Lua 5.4+ compatibility and added nil guard on `io.popen` in `get_version_commit_info`.
+
 ## [0.1.2]
 
 _Not yet released — the `v0.1.2` tag and GitHub Release are created by the **Release** workflow (manually dispatched from `main` after this commit lands)._

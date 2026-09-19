@@ -7,11 +7,40 @@ function PLUGIN:Available(ctx)
     local json = require("json")
     local versions = {}
 
+    -- Fallback list of stable releases if GitHub API is unreachable or rate-limited
+    local fallback_versions = {
+        "2.2.10",
+        "2.2.8",
+        "2.2.6",
+        "2.2.4",
+        "2.2.2",
+        "2.2.0",
+        "2.0.8",
+        "2.0.6",
+        "2.0.4",
+        "2.0.2",
+        "2.0.0",
+        "1.6.20",
+        "1.6.18",
+        "1.6.16",
+        "1.6.14",
+        "1.6.12",
+        "1.6.10",
+        "1.6.8",
+        "1.6.6",
+        "1.6.4",
+        "1.6.2",
+        "1.6.0",
+    }
+
     -- Helper to get GitHub headers with token if available
     local function get_github_headers()
         local token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_API_TOKEN")
-        if token then
-            return { ["Authorization"] = "token " .. token }
+        if token and token ~= "" then
+            if not token:match("^%a+%s+") then
+                token = "token " .. token
+            end
+            return { ["Authorization"] = token }
         end
         return {}
     end
@@ -23,14 +52,25 @@ function PLUGIN:Available(ctx)
         headers = get_github_headers(),
     })
 
-    if err == nil and resp.status_code == 200 then
-        local tags = json.decode(resp.body)
-        for _, tag in ipairs(tags) do
-            local version = tag.name:gsub("^v", "") -- Remove 'v' prefix
-            -- Only include versions that match X.Y.Z pattern
-            if version:match("^%d+%.%d+%.%d+$") then
-                table.insert(versions, { version = version })
+    if err == nil and resp and resp.status_code == 200 and resp.body then
+        local ok, tags = pcall(json.decode, resp.body)
+        if ok and type(tags) == "table" then
+            for _, tag in ipairs(tags) do
+                if tag.name then
+                    local version = tag.name:gsub("^v", "") -- Remove 'v' prefix
+                    -- Only include versions that match X.Y.Z pattern
+                    if version:match("^%d+%.%d+%.%d+$") then
+                        table.insert(versions, { version = version })
+                    end
+                end
             end
+        end
+    end
+
+    -- If API failed or was rate-limited, fall back to known stable releases
+    if #versions == 0 then
+        for _, v in ipairs(fallback_versions) do
+            table.insert(versions, { version = v })
         end
     end
 

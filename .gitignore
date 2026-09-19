@@ -27,3 +27,6 @@ Thumbs.db
 # (test/{vfox,mise}-integration_spec.lua write ./.vfox-spawn-<time>-<n>.sh and
 # remove them, but an interrupted run could leave one behind).
 /.vfox-spawn-*.sh
+
+# Locutus agent identity file
+/.locutus.agent

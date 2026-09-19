@@ -78,8 +78,11 @@ end
 -- GitHub API helpers
 function M.get_github_headers()
     local token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_API_TOKEN")
-    if token then
-        return { ["Authorization"] = "token " .. token }
+    if token and token ~= "" then
+        if not token:match("^%a+%s+") then
+            token = "token " .. token
+        end
+        return { ["Authorization"] = token }
     end
     return {}
 end
@@ -268,16 +271,26 @@ end
 
 -- Get commit hash and date for version tag (from asdf-nim:578-637)
 function M.get_version_commit_info(version)
-    local cache_dir = os.getenv("HOME") .. "/.cache/vfox-nim"
+    local home = os.getenv("HOME") or os.getenv("USERPROFILE") or os.getenv("LOCALAPPDATA") or "."
+    local cache_dir = home .. "/.cache/vfox-nim"
     local cache_file = cache_dir .. "/version-commits.txt"
 
     -- Create cache dir
-    os.execute("mkdir -p " .. cache_dir)
+    if M.is_windows() then
+        local win_cache = (cache_dir:gsub("/", "\\"))
+        os.execute('if not exist "' .. win_cache .. '" mkdir "' .. win_cache .. '" ' .. M.null_redirect())
+    else
+        os.execute("mkdir -p " .. cache_dir .. " " .. M.null_redirect())
+    end
 
     -- Check cache first
     local cached = M.read_cache(cache_file, version)
     if cached then
         return cached.hash, cached.date
+    end
+
+    if not version or not version:match("^[%w%.%-_]+$") then
+        return nil, nil
     end
 
     -- Fetch from git
@@ -289,10 +302,13 @@ function M.get_version_commit_info(version)
         .. "^{} "
         .. M.null_redirect()
     local handle = io.popen(cmd)
+    if not handle then
+        return nil, nil
+    end
     local result = handle:read("*a")
     handle:close()
 
-    if result == "" then
+    if not result or result == "" then
         return nil, nil
     end
 
@@ -307,9 +323,15 @@ function M.get_version_commit_info(version)
     local api_url = "https://api.github.com/repos/nim-lang/Nim/commits/" .. commit_hash
     local resp, err = http.get({ url = api_url, headers = M.get_github_headers() })
 
-    if err == nil and resp.status_code == 200 then
-        local commit_data = json.decode(resp.body)
-        if commit_data.commit and commit_data.commit.committer and commit_data.commit.committer.date then
+    if err == nil and resp and resp.status_code == 200 and resp.body then
+        local ok, commit_data = pcall(json.decode, resp.body)
+        if
+            ok
+            and type(commit_data) == "table"
+            and commit_data.commit
+            and commit_data.commit.committer
+            and commit_data.commit.committer.date
+        then
             local commit_date = commit_data.commit.committer.date:match("^(%d%d%d%d%-%d%d%-%d%d)")
             if commit_date then
                 -- Cache it
@@ -386,12 +408,12 @@ function M.find_nightly_url(branch, os_name, arch)
         local url = "https://api.github.com/repos/nim-lang/nightlies/releases?per_page=100&page=" .. page
         local resp, err = http.get({ url = url, headers = M.get_github_headers() })
 
-        if err ~= nil or resp.status_code ~= 200 then
+        if err ~= nil or not resp or resp.status_code ~= 200 or not resp.body then
             break
         end
 
-        local releases = json.decode(resp.body)
-        if #releases == 0 then
+        local ok, releases = pcall(json.decode, resp.body)
+        if not ok or type(releases) ~= "table" or #releases == 0 then
             break
         end
 
@@ -415,10 +437,11 @@ function M.dump(o)
     if type(o) == "table" then
         local s = "{ "
         for k, v in pairs(o) do
+            local key_str = k
             if type(k) ~= "number" then
-                k = '"' .. k .. '"'
+                key_str = '"' .. tostring(k) .. '"'
             end
-            s = s .. "[" .. k .. "] = " .. M.dump(v) .. ","
+            s = s .. "[" .. key_str .. "] = " .. M.dump(v) .. ","
         end
         return s .. "} "
     else

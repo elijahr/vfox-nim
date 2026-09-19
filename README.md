@@ -1,174 +1,178 @@
 # vfox-nim
 
-Fast and reliable Nim version management for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/). Supports Windows, macOS, and Linux, on amd64, x86 and arm64.
+Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/).
 
 [![CI](https://github.com/elijahr/vfox-nim/actions/workflows/test.yml/badge.svg)](https://github.com/elijahr/vfox-nim/actions/workflows/test.yml)
 [![Latest release](https://img.shields.io/github/v/release/elijahr/vfox-nim)](https://github.com/elijahr/vfox-nim/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Features
+---
 
-- Picks the fastest install for your platform: official binaries, then nightly builds, then source.
-- Runs on Linux, macOS, and Windows (x86_64, x86, arm64).
-- Installs the full toolchain: Nim, Nimble, and tools.
-- Force binary-only or source-only with `NIM_INSTALL_METHOD`.
-- Uses the shared `~/.nimble` (leaves `NIMBLE_DIR` unset, like a normal Nim install).
+## Overview
 
-macOS and Linux ARM have no official Nim binaries, so the plugin uses Nim's nightly builds there, which often match stable releases.
+`vfox-nim` installs and manages Nim SDKs on Linux, macOS, and Windows. It downloads prebuilt binaries whenever possible—including on Apple Silicon and Linux ARM—and falls back to compiling from source when a binary is unavailable.
 
-| Platform    | Official Binaries | Nightly Builds | Source Build |
-| ----------- | :---------------: | :------------: | :----------: |
-| Linux x64   |        ✅         |       ✅       |      ✅      |
-| Linux x32   |        ✅         |       ✅       |      ✅      |
-| Linux ARM64 |        ❌         |       ✅       |      ✅      |
-| Linux ARMv7 |        ❌         |       ✅       |      ✅      |
-| Windows x64 |        ✅         |       ✅       |      ❌      |
-| Windows x32 |        ✅         |       ✅       |      ❌      |
-| macOS x64   |        ❌         |       ✅       |      ✅      |
-| macOS ARM64 |        ❌         |       ✅       |      ✅      |
+### Key Capabilities
 
-> CI runs real end-to-end installs on Linux x64, macOS x64/arm64, Windows x64, and
-> emulated Linux arm64/armv7. The 32-bit rows and source builds on the non-x64
-> platforms should work but aren't CI-covered. Source builds aren't available on Windows.
+- **Fast binary downloads**: Automatically matches stable releases against prebuilt official releases or matching official nightlies.
+- **Apple Silicon and ARM support**: Provides prebuilt binaries for macOS ARM64 and Linux ARM, avoiding lengthy source compilations.
+- **Out-of-the-box compiler module access**: Configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work immediately without extra compiler flags or redownloading Nim.
+- **Full toolchain**: Installs `nim`, `nimble`, `nimsuggest`, `nimpretty`, and standard development tools.
+- **Standard package sharing**: Leaves `NIMBLE_DIR` unset by default so Nimble shares packages in `~/.nimble` across toolchains, preserves CLI tools across updates, and supports project-local `nimbledeps` and Atlas.
+- **Install method control**: Choose between `auto` (default), `binary` (prebuilt only), or `source` (compile from source).
+
+---
+
+## Platform Support
+
+| Platform                        |   Prebuilt Binaries   | Source Build |  CI Coverage  |
+| :------------------------------ | :-------------------: | :----------: | :-----------: |
+| **Linux x86_64**                | ✅ Official & Nightly |      ✅      | Native runner |
+| **Linux ARM64**                 |   ✅ Nightly match    |      ✅      | Emulated QEMU |
+| **Linux ARMv7**                 |   ✅ Nightly match    |      ✅      | Emulated QEMU |
+| **macOS Apple Silicon (arm64)** |   ✅ Nightly match    |      ✅      | Native runner |
+| **macOS Intel (x86_64)**        |   ✅ Nightly match    |      ✅      | Native runner |
+| **Windows x86_64**              | ✅ Official & Nightly |      ❌      | Native runner |
+
+---
 
 ## Quick Start
 
-### With mise
+### Using mise
+
+Install Nim directly using mise's vfox backend:
 
 ```bash
-# Simplest: install through mise's vfox backend (no plugin-install step, no registry).
-# `nim` lands on your PATH afterwards.
-mise use -g vfox:elijahr/vfox-nim@2.2.0       # or @latest
-
-# Prefer a plain `nim` name in your config? Register the plugin under it first:
-mise plugin install nim https://github.com/elijahr/vfox-nim
-mise use -g nim@latest                        # then nim@<version> works
+# Install and set global default
+mise use -g vfox:elijahr/vfox-nim@latest
 ```
 
-### With vfox
+Or register the plugin under the short name `nim`:
 
 ```bash
+# Register plugin
+mise plugin install nim https://github.com/elijahr/vfox-nim
+
+# Install and activate latest stable Nim
+mise use -g nim@latest
+```
+
+Verify your installation:
+
+```bash
+nim --version
+nimble --version
+```
+
+### Using vfox
+
+```bash
+# Add plugin
 vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
 
-# Install latest Nim
+# Install and activate latest stable Nim
 vfox install nim@latest
-
-# Set as global default
 vfox use -g nim@latest
 ```
 
-<!-- TODO: demo GIF/asciinema of `mise install nim@2.2.0`. Record with vhs or asciinema,
-     drop the asset at docs/demo.gif, and replace this comment with ![demo](docs/demo.gif) -->
+---
 
-A real install on Linux x64 finishes in about 30 seconds:
+## Installing Versions
 
-```console
-$ mise install nim@2.2.0
-mise nim@2.2.0  downloading nim-2.2.0-linux_x64.tar.xz
-mise nim@2.2.0  installing nim-2.2.0-linux_x64.tar.xz
-mise nim@2.2.0  Official binary for linux/x86_64
-$ mise exec nim@2.2.0 -- nim --version
-Nim Compiler Version 2.2.0 [Linux: amd64]
-```
-
-## Installing versions
+You can install specific releases, development branches, or exact commits:
 
 ```bash
 # Latest stable release
 mise install nim@latest
 
-# A specific version
-mise install nim@2.2.0
+# Specific release version
+mise install nim@2.2.8
 
-# Partial versions (mise resolves these to the newest matching release)
-mise install nim@2.2          # newest 2.2.x
-mise install nim@2            # newest 2.x
+# Partial version prefix (resolves to latest matching release)
+mise install nim@2.2
+mise install nim@2
 
-# Nim's development branch — fetched as a prebuilt nightly binary when one exists
-# for your platform, otherwise built from source
+# Nim development branch (uses prebuilt nightly if available, otherwise builds from source)
 mise install nim@ref:devel
 
-# Any Nim branch, or a specific commit
+# Specific release branch or git commit
 mise install nim@ref:version-2-2
 mise install nim@ref:1a2b3c4
 ```
 
-`ref:` specs use a prebuilt nightly binary when one is available for your platform, and
-otherwise build from source. A bare branch name (`mise install nim@devel`) also works, but
-always builds from source.
+### Project Version Files
 
-Pin a project with a version file — the plugin reads `.nim-version`, and mise's own
-`mise.toml` / `.tool-versions` work too:
+Pin the Nim version for your project with a `.nim-version` file:
 
 ```bash
-echo "2.2.0" > .nim-version
-mise install            # installs the version named in .nim-version
+echo "2.2.8" > .nim-version
+mise install
 ```
 
-> **GitHub API rate limits.** vfox-nim queries the GitHub API to resolve versions and
-> nightly builds. Behind a shared IP or in CI, set `GITHUB_TOKEN` to avoid rate-limit
-> errors (`export GITHUB_TOKEN=...`, or `${{ secrets.GITHUB_TOKEN }}` in Actions).
+mise also supports standard `mise.toml` and `.tool-versions` files.
 
-vfox accepts the same specs: `vfox install nim@2.2.0`, `vfox install nim@ref:devel`, and so on.
+> **Rate Limit Note**: The plugin queries the GitHub Releases API to resolve version tags and nightly binaries. In CI environments or behind shared NAT IPs, set `GITHUB_TOKEN` in your environment to prevent rate-limiting.
+
+---
 
 ## Configuration
 
-Control how Nim is installed with the `install_method` option:
+Control how the plugin installs Nim by setting `install_method`:
 
-- `auto` (default): try official binaries, then nightly builds, then source.
-- `binary`: pre-built binaries only; fail if none exists for your platform.
-- `source`: always build from source. Not available on Windows.
+- **`auto`** (default): Uses official binaries first, falls back to matching nightlies, and compiles from source if no binary exists.
+- **`binary`**: Prebuilt binaries only. Fails with an error if no prebuilt binary is available for your platform.
+- **`source`**: Compiles Nim from source using C bootstrap sources (`build_all.sh` / `koch`). Not supported on Windows.
 
-Set it per project in `mise.toml`:
+### Configuration Methods
+
+In `mise.toml`:
 
 ```toml
+[tools]
+nim = "2.2.8"
+
 [env]
 _.nim = { install_method = "binary" }
 ```
 
-Or as an environment variable (works with both mise and vfox):
+Or via environment variable in your shell or CI workflow:
 
 ```bash
-export NIM_INSTALL_METHOD=binary
+export NIM_INSTALL_METHOD="binary"
 ```
 
-### Nimble package directory (`NIMBLE_DIR`)
+---
 
-This plugin does **not** set `NIMBLE_DIR`. Nim therefore uses the shared
-`~/.nimble` directory, matching the behavior of
-[`choosenim`](https://github.com/nim-lang/choosenim) and a standard Nim install.
-Leaving it unset means:
+## Compiler Internals & Search Paths
 
-- A `NIMBLE_DIR` you set yourself (in your shell, `mise.toml` `[env]`, or CI) is
-  respected — the plugin never overrides it.
-- Nimble's project-local
-  [`nimbledeps`](https://nim-lang.github.io/nimble/workflow.html#nimbledeps)
-  auto-detection still works (it only activates when `NIMBLE_DIR` is unset).
+Some Nim tools and libraries import compiler internal modules, such as:
 
-Earlier versions pinned `NIMBLE_DIR` to a per-version `<install>/nimble` path
-(inherited from `asdf-nim`). That polluted the managed install directory and lost
-installed packages whenever a Nim version was reinstalled; it is no longer done.
+```nim
+import compiler/[ast, idents, parser, options]
+```
 
-### Coming from asdf's `nim` plugin
+By default in standard tarballs, the compiler sources reside at `$SDK/compiler`, but are not on Nim's default library search path. Previously, packages importing compiler internals would either fail or cause Nimble to clone the entire Nim repository (~1.5 GB) and recompile the compiler from scratch.
 
-vfox-nim is an independent alternative to asdf's `nim` plugin
-([`asdf-community/asdf-nim`](https://github.com/asdf-community/asdf-nim)) written by
-the same author, intended as a successor for use with mise and vfox. (A separate
-[`mise-plugins/mise-nim`](https://github.com/mise-plugins/mise-nim) plugin exists; it
-is a fork of `asdf-nim` that runs under mise's legacy asdf-bash-plugin shim, not a
-native vfox plugin.)
+`vfox-nim` configures `path = "$nim"` in `config/nim.cfg` and creates a relative `lib/compiler` symlink on Unix during installation. Compiler modules resolve directly against the installed SDK out of the box, with no manual `--path` compiler flags required.
 
-The main difference when switching: asdf-nim exports `NIMBLE_DIR=<install>/nimble`, so
-your globally-installed nimble packages live inside each Nim version's install
-directory. vfox-nim leaves `NIMBLE_DIR` unset (shared `~/.nimble`, matching
-`choosenim`). After switching, reinstall your global nimble tools
-(`nimble install -g <pkg>`) so they resolve from `~/.nimble`; the old per-version
-packages aren't deleted, just no longer on `PATH`. To keep the old layout, set
-`NIMBLE_DIR` yourself and the plugin honors it.
+---
 
-## GitHub Actions
+## Package Directory (`NIMBLE_DIR`) & Tool Management
 
-Install Nim through mise + vfox-nim in a workflow. This runs on Linux, macOS, and Windows:
+This plugin intentionally leaves `NIMBLE_DIR` **unset**, defaulting to the shared `~/.nimble` directory.
+
+### Why this benefits you:
+
+1. **Persistent CLI Tools**: Binaries installed via `nimble install -g <package>` remain available in `~/.nimble/bin` when switching Nim versions.
+2. **Project-Local Dependencies**: Nimble's automatic `nimbledeps` detection functions properly (it requires `NIMBLE_DIR` to be unset).
+3. **Atlas Compatibility**: Works seamlessly with [Atlas](https://github.com/nim-lang/atlas) workspaces and local `_deps` configurations.
+4. **Custom Overrides**: If you set `NIMBLE_DIR` in your shell, the plugin respects your setting.
+
+---
+
+## GitHub Actions Workflow
+
+Here is a tested GitHub Actions workflow that installs Nim across Linux, macOS, and Windows:
 
 ```yaml
 name: CI
@@ -186,18 +190,18 @@ jobs:
       - name: Set up mise
         uses: jdx/mise-action@v2
 
-      - name: Install Nim via vfox-nim
+      - name: Install Nim
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # avoid GitHub API rate limits
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mise plugin install nim https://github.com/elijahr/vfox-nim
-          mise use nim@2.2.0
-          mise exec -- nim --version
+          mise use -g nim@2.2.8
+          nim --version
+          nimble --version
 
-      # On Windows, Nim and Nimble are dynamically linked against OpenSSL and PCRE.
-      # Install Nim's DLL bundle (plus a CA bundle for HTTPS) so `nimble` works.
-      - name: Install Nim runtime DLLs (Windows)
+      # Windows requires runtime DLLs for HTTPS and SSL support in Nimble
+      - name: Install Nim Windows runtime DLLs
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -208,89 +212,34 @@ jobs:
           Invoke-WebRequest https://curl.se/ca/cacert.pem -OutFile "$env:GITHUB_WORKSPACE\cacert.pem"
           Add-Content $env:GITHUB_ENV "SSL_CERT_FILE=$env:GITHUB_WORKSPACE\cacert.pem"
 
-      - name: Build and test
+      - name: Run Tests
         shell: bash
-        run: mise exec -- nimble test
+        run: nimble test
 ```
 
-`jdx/mise-action` installs and activates mise. The Windows DLL step mirrors what
-[`nim-lang/setup-nimble-action`](https://github.com/nim-lang/setup-nimble-action) does —
-without those DLLs, `nimble` operations that use HTTPS fail with missing-DLL errors; skip
-the step if your build never invokes nimble's networking.
-
-### With vfox instead of mise
-
-mise is the simplest path in CI (the `jdx/mise-action` above). vfox has no
-first-party setup action, so install it per runner OS, then add the plugin and
-activate it within a single step (each step is a fresh shell):
-
-```yaml
-- name: Install Nim via vfox
-  shell: bash
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: |
-    # Install vfox (Linux shown; on macOS: `brew install vfox`, on Windows: `scoop install vfox`).
-    echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
-    sudo apt-get update && sudo apt-get install -y vfox
-
-    vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
-    vfox install nim@2.2.0
-
-    # Activate within this step and run your build (PATH does not carry to later steps):
-    echo "nim 2.2.0" > .tool-versions
-    eval "$(vfox activate bash)"
-    nim --version
-```
-
-On Windows, the same Nim DLL step from the mise example applies.
+---
 
 ## Development
 
+To contribute or run tests locally:
+
 ```bash
-# 1. Trust the repo's mise config (an untrusted mise.toml breaks every shimmed
-#    command with "not trusted").
+# 1. Trust the local mise configuration
 mise trust
 
-# 2. Provision a durable Lua 5.1-ABI toolchain (LuaJIT + busted/luacheck) OUTSIDE
-#    /tmp so it survives reboots. LuaJIT is the Lua 5.1-ABI interpreter the suite
-#    runs green under (~0.5s). Install LuaJIT and luarocks first if absent:
-#    `brew install luajit luarocks`.
-luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
-  --tree "$HOME/.vfox-nim-rocks" install busted
-luarocks --lua-version 5.1 --lua-dir "$(brew --prefix luajit)" \
-  --tree "$HOME/.vfox-nim-rocks" install luacheck
-
-# Link plugin for development
+# 2. Link plugin to local development workspace
 mise plugin link --force nim .
 
-# Fast unit suite (Tiers I+II — mocked wiring + install-logic). The rocks-tree
-# bin must be on PATH so `busted` resolves:
-PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run test-unit
-# Equivalent direct invocation (set LUA_PATH/LUA_CPATH to the rocks tree first):
-#   export LUA_PATH="$HOME/.vfox-nim-rocks/share/lua/5.1/?.lua;$HOME/.vfox-nim-rocks/share/lua/5.1/?/init.lua;./?.lua;./?/init.lua;;"
-#   export LUA_CPATH="$HOME/.vfox-nim-rocks/lib/lua/5.1/?.so;;"
-#   luajit "$HOME/.vfox-nim-rocks/bin/busted" spec/
+# 3. Run unit tests (busted)
+mise run test-unit
 
-# Install-smoke test (downloads and runs a real Nim toolchain over the network):
-mise run test
-
-# Lint + format. These run the pre-commit hooks. pre-commit's `luacheck` hook
-# needs `luacheck` on PATH — it is NOT provided by mise.toml (which only pins
-# stylua + actionlint). Install it into the durable rocks tree above and expose
-# its bin, e.g.:
-#   PATH="$HOME/.vfox-nim-rocks/bin:$PATH" mise run lint
-# Without luacheck on PATH, commits fail with "Executable `luacheck` not found".
-# Lint/format use the mise-pinned stylua 2.3.1 — always invoke via mise so CI and
-# local agree (a system stylua may be a different version, e.g. 2.5.2):
+# 4. Run static analysis and formatting checks
 mise run lint
 mise run format
-
-# Reproduce the Linux CI legs locally (Docker; macOS/Windows legs are not act-runnable):
-act -j lua_tests                                      # Tier I+II Linux leg
-act -j vfox_integration_test -s GITHUB_TOKEN=<token>  # Tier III Linux leg
 ```
+
+---
 
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).

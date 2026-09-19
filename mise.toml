@@ -1,5 +1,7 @@
 [env]
 MISE_USE_VERSIONS_HOST = "0"
+_.path = ["{{env.HOME}}/.luarocks/bin", "{{env.HOME}}/.vfox-nim-rocks/bin"]
+
 
 [tools]
 stylua = "2.3.1"

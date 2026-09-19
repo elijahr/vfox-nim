@@ -393,5 +393,28 @@ describe("pre_install install_method behavior", function()
             assert.is_string(result.url)
             assert.matches("linux_x64", result.url)
         end)
+
+        it("halts cleanly and outputs diagnostics when NIM_DRY_RUN=1", function()
+            _G.os.getenv = function(name)
+                if name == "NIM_DRY_RUN" then
+                    return "1"
+                end
+                if name == "HOME" then
+                    return "/tmp/test-home"
+                end
+                return nil
+            end
+
+            dofile("hooks/pre_install.lua")
+            ctx.version = "2.2.4"
+            RUNTIME.osType = "Linux"
+            RUNTIME.archType = "x86_64"
+
+            local ok, err = pcall(function()
+                PLUGIN:PreInstall(ctx)
+            end)
+            assert.is_false(ok)
+            assert.matches("%[vfox%-nim%] Dry%-run completed successfully", err)
+        end)
     end)
 end)

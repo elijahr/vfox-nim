@@ -11,9 +11,20 @@ function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo[PLUGIN.name]
     local path = sdkInfo.path
 
-    -- Get install method from environment (set by MiseEnv hook or directly)
+    -- Get install method: check ctx.options first (native mise tool option),
+    -- then environment variable (set by MiseEnv hook or user).
     -- Valid values: "auto" (default), "binary", "source"
-    local install_method = os.getenv("NIM_INSTALL_METHOD") or "auto"
+    local install_method = "auto"
+    do
+        local ok, val = pcall(function()
+            return ctx.options.install_method
+        end)
+        if ok and val and val ~= "" then
+            install_method = val
+        elseif os.getenv("NIM_INSTALL_METHOD") then
+            install_method = os.getenv("NIM_INSTALL_METHOD")
+        end
+    end
 
     -- Helper function to check if file exists
     local function file_exists(filepath)
@@ -28,9 +39,12 @@ function PLUGIN:PostInstall(ctx)
     -- Helper function to execute command and get result
     local function exec(cmd)
         local handle = io.popen(cmd .. " 2>&1")
+        if not handle then
+            return false, "failed to spawn command"
+        end
         local result = handle:read("*a")
         local success = handle:close()
-        return success, result
+        return (success == true or success == 0), result
     end
 
     -- Determine if this is a binary release or source
@@ -78,30 +92,44 @@ function PLUGIN:PostInstall(ctx)
     -- Check if we need to restructure the archive
     -- mise: extracts to /path/to/install -> need to move nim-VERSION/* up
     -- vfox: extracts to /path/to/nim-VERSION -> files are already in place
-    local path_basename = path:match("([^/]+)$")
+    local path_basename = path:match("([^/\\]+)$")
     local needs_restructure = not path_basename:match("^nim%-")
 
     if needs_restructure then
-        -- mise-style: Look for nim-* subdirectory and move contents up.
-        -- OS-aware stderr discard (utils.null_redirect => `2>nul` on Windows). NOTE: the
-        -- `find ... | head -1` pipeline is itself POSIX-only (no cmd.exe equivalent of
-        -- find/head); this restructure path is reached on mise-style extraction regardless of
-        -- OS, so the Unix-ism remains a known limitation here. Rewriting find|head is out of
-        -- scope for this redirect-portability fix; only the redirect is normalized.
-        local find_cmd = 'find "'
-            .. path
-            .. '" -maxdepth 1 -type d -name "nim-*" '
-            .. utils.null_redirect()
-            .. " | head -1"
-        local handle = io.popen(find_cmd)
-        local found_dir = handle:read("*a"):gsub("%s+$", "")
-        handle:close()
+        -- Look for nim-* subdirectory and move contents up.
+        local found_dir = nil
+        if is_windows then
+            -- On Windows cmd.exe, dir /b /ad lists directory names matching pattern
+            local win_dir_cmd = win_exec_str('dir /b /ad "' .. native_path(path) .. '\\nim-*" 2>nul')
+            local ok, out = exec(win_dir_cmd)
+            if ok and out and out ~= "" then
+                local first_line = out:match("([^\r\n]+)")
+                if first_line then
+                    found_dir = path .. "/" .. first_line
+                end
+            end
+        else
+            -- Unix: find or ls
+            local ok, out = exec('ls -d "' .. path .. '"/nim-* 2>/dev/null | head -1')
+            if ok and out and out ~= "" then
+                found_dir = out:gsub("%s+$", "")
+            end
+        end
 
         if found_dir and found_dir ~= "" and file_exists(found_dir) then
             -- Move contents up one level
             print("Restructuring extracted archive...")
-            exec('cp -r "' .. found_dir .. '"/* "' .. path .. '/"')
-            exec('rm -rf "' .. found_dir .. '"')
+            if is_windows then
+                exec(
+                    win_exec_str(
+                        'xcopy "' .. native_path(found_dir) .. '\\*" "' .. native_path(path) .. '\\" /E /H /Y /Q 2>nul'
+                    )
+                )
+                exec(win_exec_str('rmdir /s /q "' .. native_path(found_dir) .. '" 2>nul'))
+            else
+                exec('cp -R "' .. found_dir .. '/." "' .. path .. '/"')
+                exec('rm -rf "' .. found_dir .. '"')
+            end
         end
     end
 
@@ -180,6 +208,40 @@ function PLUGIN:PostInstall(ctx)
         end
     end
 
+    -- Configure compiler module resolution out-of-the-box (e.g. import compiler/ast)
+    local function configure_compiler_paths(sdk_path)
+        local cfg_path = sdk_path .. "/config/nim.cfg"
+        local f = io.open(cfg_path, "r")
+        if f then
+            local content = f:read("*a") or ""
+            f:close()
+            if
+                not content:find("path%s*=%s*[\"']?%$nim[\"']?")
+                and not content:find("path%s*=%s*[\"']?%$lib/%.%.[\"']?")
+            then
+                local fa = io.open(cfg_path, "a")
+                if fa then
+                    fa:write(
+                        '\n# Ensure compiler internals are accessible as a library (e.g. import compiler/ast)\npath = "$nim"\n'
+                    )
+                    fa:close()
+                    print("Configured compiler library search path in config/nim.cfg")
+                end
+            end
+        end
+
+        -- On Unix, also create relative symlink lib/compiler -> ../compiler if compiler sources exist
+        if not is_windows then
+            local has_compiler_sources = file_exists(sdk_path .. "/compiler/ast.nim")
+            local has_lib_compiler = file_exists(sdk_path .. "/lib/compiler/ast.nim")
+            if has_compiler_sources and not has_lib_compiler then
+                exec('ln -sf ../compiler "' .. sdk_path .. '/lib/compiler"')
+            end
+        end
+    end
+
+    configure_compiler_paths(path)
+
     print("Nim installed successfully!")
     return {}
 end
@@ -235,7 +297,15 @@ build_from_source = function(install_path, is_windows, nim_ext) -- luacheck: no 
     -- Workaround for ci/funs.sh: line 52: config/build_config.txt: No such file or directory
     if not file_exists(install_path .. "/config/build_config.txt") then
         -- make dirs
-        exec_or_error('mkdir -p "' .. install_path .. '/config"', "Failed to create config directory")
+        if is_windows then
+            local native_config = native_path(install_path .. "/config")
+            exec_or_error(
+                'if not exist "' .. native_config .. '" mkdir "' .. native_config .. '"',
+                "Failed to create config directory"
+            )
+        else
+            exec_or_error('mkdir -p "' .. install_path .. '/config"', "Failed to create config directory")
+        end
         -- write multiline string to file
         local f = io.open(install_path .. "/config/build_config.txt", "w")
         f:write([[nim_comment="key-value pairs for windows/posix bootstrapping build scripts"

@@ -8,7 +8,13 @@ function PLUGIN:MiseEnv(ctx)
     --   "auto"   - Try binaries first, fall back to source (default)
     --   "binary" - Only use pre-built binaries, fail if unavailable
     --   "source" - Only build from source
-    local install_method = ctx.options.install_method or "auto"
+    local install_method = "auto"
+    local ok, val = pcall(function()
+        return ctx.options.install_method
+    end)
+    if ok and val and val ~= "" then
+        install_method = val
+    end
 
     -- Validate install_method
     local valid_methods = { auto = true, binary = true, source = true }

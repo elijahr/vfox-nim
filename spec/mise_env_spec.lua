@@ -114,5 +114,29 @@ describe("mise_env hook", function()
             assert.matches("binary", err)
             assert.matches("source", err)
         end)
+
+        it("handles nil ctx.options safely", function()
+            dofile("hooks/mise_env.lua")
+            ctx.options = nil
+
+            local result = PLUGIN:MiseEnv(ctx)
+            assert.is_table(result)
+            assert.equal("auto", result[1].value)
+        end)
+
+        it("handles userdata-like ctx.options safely", function()
+            dofile("hooks/mise_env.lua")
+            -- Simulate userdata that throws error on missing key access
+            local mock_userdata = setmetatable({}, {
+                __index = function(_, k)
+                    error("attempt to get an unknown field '" .. tostring(k) .. "'", 2)
+                end,
+            })
+            ctx.options = mock_userdata
+
+            local result = PLUGIN:MiseEnv(ctx)
+            assert.is_table(result)
+            assert.equal("auto", result[1].value)
+        end)
     end)
 end)

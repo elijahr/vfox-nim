@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Simulate resolution and report download details without installing (dry-run)"
+set -euo pipefail
+
+VERSION="${1:-latest}"
+echo "Running vfox-nim dry-run for nim@${VERSION}..."
+NIM_DRY_RUN=1 mise install "nim@${VERSION}" 2>&1 || true
