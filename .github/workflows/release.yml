@@ -45,7 +45,7 @@ jobs:
             exit 1
           fi
           awk -v hdr="## [$num]" '
-            $0 == hdr { grab = 1; next }
+            index($0, hdr) == 1 { grab = 1; next }
             grab && (/^## \[/ || /^\[[^]]+\]:[[:space:]]*http/) { exit }
             grab && /^_.*_[[:space:]]*$/ { next }
             grab { print }
