@@ -47,7 +47,7 @@ jobs:
             vfox_asset: vfox_1.0.11_linux_armv7.tar.gz
     steps:
       - name: Checkout plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -113,7 +113,7 @@ jobs:
     runs-on: macos-15-intel
     steps:
       - name: Checkout plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
