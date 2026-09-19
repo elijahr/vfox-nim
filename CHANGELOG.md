@@ -8,6 +8,8 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ### Added
 
+- Dependabot configuration `.github/dependabot.yml` tracking weekly GitHub Actions updates.
+- Automated scheduled weekly health check in `.github/workflows/test.yml` running Mondays at 04:00 UTC.
 - Dry-run simulation mode (`NIM_DRY_RUN=1`) and `mise run doctor [version]` task: Reports resolved download URL, platform, install method, and resolution rationale without downloading archives or altering system files (closes #6).
 - Out-of-the-box compiler module resolution: Configures `path = "$nim"` in `config/nim.cfg` and creates a relative `lib/compiler -> ../compiler` symlink on Unix during `PostInstall`. Allows importing compiler internals (such as `import compiler/ast`, `import compiler/options`, `import compiler/parser`) out of the box across all installations (releases, nightlies, and source builds) without manual `--path` flags or triggering Nimble to download and recompile the Nim compiler from source.
 - Fallback stable version catalog in `Available` hook when the GitHub API is rate-limited or offline.

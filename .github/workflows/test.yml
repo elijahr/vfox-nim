@@ -6,6 +6,9 @@ name: test
 on:
   # yamllint enable rule:truthy
   workflow_dispatch: {}
+  schedule:
+    # Weekly health check: Mondays at 04:00 UTC
+    - cron: "0 4 * * 1"
   pull_request:
     branches: ["*"]
     paths:
