@@ -57,7 +57,7 @@ jobs:
       # hooks need. .tool-versions no longer pins lua, so this no longer triggers a
       # source build of Lua.
       - name: Install mise and .tool-versions
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -119,7 +119,7 @@ jobs:
       - uses: ./.github/actions/setup-lua
 
       - name: Install mise and .tool-versions
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
         with:
           install: false
 
