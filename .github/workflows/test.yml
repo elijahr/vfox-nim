@@ -166,7 +166,7 @@ jobs:
       - uses: ./.github/actions/setup-lua
 
       - name: Install vfox and .tool-versions (Windows)
-        uses: MinoruSekine/setup-scoop@v4.0.2
+        uses: MinoruSekine/setup-scoop@v5.0.1
         if: runner.os == 'Windows'
         with:
           apps: vfox
