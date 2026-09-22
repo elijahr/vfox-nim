@@ -18,7 +18,7 @@ Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/
 - **Apple Silicon and ARM support**: Provides prebuilt binaries for macOS ARM64 and Linux ARM, avoiding lengthy source compilations.
 - **Out-of-the-box compiler module access**: Configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work immediately without extra compiler flags or redownloading Nim.
 - **Full toolchain**: Installs `nim`, `nimble`, `nimsuggest`, `nimpretty`, and standard development tools.
-- **Standard package sharing**: Leaves `NIMBLE_DIR` unset by default so Nimble shares packages in `~/.nimble` across toolchains, preserves CLI tools across updates, and supports project-local `nimbledeps` and Atlas.
+- **Standard package sharing**: Preserves standard Nimble package locations, CLI tools in `~/.nimble/bin`, project-local `nimbledeps`, and Atlas workspaces.
 - **Install method control**: Choose between `auto` (default), `binary` (prebuilt only), or `source` (compile from source).
 
 ---
@@ -74,6 +74,19 @@ vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zi
 vfox install nim@latest
 vfox use -g nim@latest
 ```
+
+> [!TIP]
+> ### Declarative Nim CLI Tools with `vfox-nimble`
+> If you use tools like `nimlsp`, `c2nim`, `testament`, or `atlas`, consider adding the companion **[`vfox-nimble`](https://github.com/elijahr/vfox-nimble)** backend plugin.
+>
+> While `vfox-nim` manages the Nim compiler and core SDK, `vfox-nimble` lets you declare and pin Nim CLI packages directly in your `mise.toml`:
+> ```toml
+> [tools]
+> nim = "2.2.8"
+> "nimble:c2nim" = "latest"
+> "nimble:nimlsp" = "0.4.7"
+> ```
+> This keeps your developer tooling isolated, version-controlled, and reproducible across teammates and CI runners.
 
 ---
 
@@ -154,19 +167,6 @@ import compiler/[ast, idents, parser, options]
 By default in standard tarballs, the compiler sources reside at `$SDK/compiler`, but are not on Nim's default library search path. Previously, packages importing compiler internals would either fail or cause Nimble to clone the entire Nim repository (~1.5 GB) and recompile the compiler from scratch.
 
 `vfox-nim` configures `path = "$nim"` in `config/nim.cfg` and creates a relative `lib/compiler` symlink on Unix during installation. Compiler modules resolve directly against the installed SDK out of the box, with no manual `--path` compiler flags required.
-
----
-
-## Package Directory (`NIMBLE_DIR`) & Tool Management
-
-This plugin intentionally leaves `NIMBLE_DIR` **unset**, defaulting to the shared `~/.nimble` directory.
-
-### Why this benefits you:
-
-1. **Persistent CLI Tools**: Binaries installed via `nimble install -g <package>` remain available in `~/.nimble/bin` when switching Nim versions.
-2. **Project-Local Dependencies**: Nimble's automatic `nimbledeps` detection functions properly (it requires `NIMBLE_DIR` to be unset).
-3. **Atlas Compatibility**: Works seamlessly with [Atlas](https://github.com/nim-lang/atlas) workspaces and local `_deps` configurations.
-4. **Custom Overrides**: If you set `NIMBLE_DIR` in your shell, the plugin respects your setting.
 
 ---
 
