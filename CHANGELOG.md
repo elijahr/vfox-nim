@@ -6,7 +6,12 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-22
+
 ### Added
+
+- Continuous Integration guide in `README.md` for both vfox and mise on GitHub Actions and Forgejo (`act_runner`).
+- Companion plugin section in `README.md` linking to `vfox-nimble`.
 
 - Dependabot configuration `.github/dependabot.yml` tracking weekly GitHub Actions updates.
 - Automated scheduled weekly health check in `.github/workflows/test.yml` running Mondays at 04:00 UTC.

@@ -170,9 +170,28 @@ This plugin intentionally leaves `NIMBLE_DIR` **unset**, defaulting to the share
 
 ---
 
-## GitHub Actions Workflow
+## Companion Plugin: `vfox-nimble`
 
-Here is a tested GitHub Actions workflow that installs Nim across Linux, macOS, and Windows:
+Looking for declarative Nim CLI tool and package management? Pair `vfox-nim` with **[vfox-nimble](https://github.com/elijahr/vfox-nimble)**, a native mise backend plugin:
+
+```bash
+# Manage the Nim compiler and toolchain with vfox-nim
+mise use vfox:elijahr/vfox-nim@latest
+
+# Install and isolate Nimble CLI tools with vfox-nimble
+mise use nimble:c2nim@latest
+mise use nimble:nimlsp@latest
+```
+
+---
+
+## Continuous Integration: Using vfox & mise (GitHub Actions & Forgejo)
+
+Both `vfox` and `mise` can be used to set up Nim in CI across Linux, macOS, and Windows runners, including self-hosted Forgejo runners.
+
+### Option 1: Using `vfox` directly
+
+#### In GitHub Actions (Linux, macOS, Windows)
 
 ```yaml
 name: CI
@@ -187,16 +206,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up mise
-        uses: jdx/mise-action@v2
-
-      - name: Install Nim
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install vfox (Linux & macOS)
+        if: runner.os != 'Windows'
         run: |
-          mise plugin install nim https://github.com/elijahr/vfox-nim
-          mise use -g nim@2.2.8
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
+            sudo apt-get update && sudo apt-get install -y vfox
+          else
+            brew tap version-fox/tap && brew install vfox
+          fi
+
+      - name: Install vfox (Windows)
+        if: runner.os == 'Windows'
+        uses: MinoruSekine/setup-scoop@v5.0.1
+        with:
+          apps: vfox
+
+      - name: Install Nim via vfox
+        shell: bash
+        run: |
+          vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
+          vfox install nim@2.2.8
+          vfox use -g nim@2.2.8
+          eval "$(vfox activate bash)"
           nim --version
           nimble --version
 
@@ -214,7 +246,101 @@ jobs:
 
       - name: Run Tests
         shell: bash
-        run: nimble test
+        run: |
+          eval "$(vfox activate bash)"
+          nimble test
+```
+
+#### In Forgejo Actions (`act_runner` / Docker)
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: docker
+    container:
+      image: catthehacker/ubuntu:act-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install vfox & Nim
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git xz-utils
+          echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" > /etc/apt/sources.list.d/versionfox.list
+          apt-get update && apt-get install -y vfox
+          vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
+          vfox install nim@2.2.8
+          vfox use -g nim@2.2.8
+          eval "$(vfox activate bash)"
+          nim --version
+          nimble --version
+          nimble test
+```
+
+### Option 2: Using `mise`
+
+#### In GitHub Actions
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up mise
+        uses: jdx/mise-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          plugins: |
+            nim https://github.com/elijahr/vfox-nim.git
+
+      - name: Verify & Test
+        shell: bash
+        run: |
+          nim --version
+          nimble test
+```
+
+#### In Forgejo Actions
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: docker
+    container:
+      image: catthehacker/ubuntu:act-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies & mise
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git xz-utils
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+
+      - name: Install Nim & run tests
+        run: |
+          export MISE_GITHUB_ATTESTATIONS=0
+          mise plugin install nim https://github.com/elijahr/vfox-nim.git
+          mise use -g nim@2.2.8
+          nim --version
+          nimble test
 ```
 
 ---
