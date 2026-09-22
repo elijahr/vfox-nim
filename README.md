@@ -76,16 +76,20 @@ vfox use -g nim@latest
 ```
 
 > [!TIP]
+>
 > ### Declarative Nim CLI Tools with `vfox-nimble`
+>
 > If you use tools like `nimlsp`, `c2nim`, `testament`, or `atlas`, consider adding the companion **[`vfox-nimble`](https://github.com/elijahr/vfox-nimble)** backend plugin.
 >
 > While `vfox-nim` manages the Nim compiler and core SDK, `vfox-nimble` lets you declare and pin Nim CLI packages directly in your `mise.toml`:
+>
 > ```toml
 > [tools]
 > nim = "2.2.8"
 > "nimble:c2nim" = "latest"
 > "nimble:nimlsp" = "0.4.7"
 > ```
+>
 > This keeps your developer tooling isolated, version-controlled, and reproducible across teammates and CI runners.
 
 ---

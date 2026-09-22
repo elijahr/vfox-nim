@@ -6,6 +6,14 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-22
+
+### Documentation
+
+- Added prominent `vfox-nimble` companion callout after Quick Start showcasing declarative per-project CLI tool management.
+- Streamlined documentation by removing internal `NIMBLE_DIR` implementation details.
+- Formatted callouts and examples with Prettier.
+
 ## [0.2.0] - 2026-09-22
 
 ### Added
