@@ -6,6 +6,18 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-25
+
+### Added
+
+- Automated VersionFox release and manifest publishing workflow (`.github/workflows/publish.yaml`) using `version-fox/plugin-manifest-action`.
+- `PLUGIN.license = "MIT"` and `PLUGIN.manifestUrl` in `metadata.lua` conforming to VersionFox registry requirements.
+
+### Documentation
+
+- Clarified mise native `http:nim` vs `vfox-nim` and updated CI recommendations.
+- Detailed source build fallback behavior in contrast with official mise `http:nim`.
+
 ## [0.2.1] - 2026-09-22
 
 ### Documentation
@@ -180,7 +192,10 @@ _Released via the **Release** workflow (manually dispatched from `main`)._
   suites (a real `nim` install end-to-end) — passes on `ubuntu-latest`, `macos-latest`,
   and `windows-latest`, and the Windows legs are blocking (not `continue-on-error`).
 
-[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/elijahr/vfox-nim/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/elijahr/vfox-nim/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/elijahr/vfox-nim/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/elijahr/vfox-nim/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/elijahr/vfox-nim/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/elijahr/vfox-nim/releases/tag/v0.1.0

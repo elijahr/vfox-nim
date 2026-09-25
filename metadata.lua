@@ -1,39 +1,31 @@
--- metadata.lua
--- Plugin metadata and configuration
--- Documentation: https://mise.jdx.dev/tool-plugin-development.html#metadata-lua
+--- !!! DO NOT EDIT OR RENAME !!!
+PLUGIN = {}
 
-PLUGIN = {
-    -- Required: Tool name (lowercase, no spaces)
-    name = "nim",
+--- !!! MUST BE SET !!!
+--- Plugin name
+PLUGIN.name = "nim"
+--- Plugin version
+PLUGIN.version = "0.2.2"
+--- Plugin repository
+PLUGIN.homepage = "https://github.com/elijahr/vfox-nim"
+--- Plugin license
+PLUGIN.license = "MIT"
+--- Plugin description
+PLUGIN.description = "Nim compiler version manager with Windows support (vfox/mise tool plugin)"
 
-    -- Required: Plugin version (not the tool version)
-    version = "0.2.1",
+--- !!! OPTIONAL !!!
+PLUGIN.author = "elijahr"
+PLUGIN.updateUrl = "https://github.com/elijahr/vfox-nim"
+PLUGIN.manifestUrl = "https://github.com/elijahr/vfox-nim/releases/download/manifest/manifest.json"
+PLUGIN.minRuntimeVersion = "0.2.0"
 
-    -- Required: Brief description of the tool
-    description = "Nim compiler version manager with Windows support (vfox/mise tool plugin)",
+PLUGIN.legacyFilenames = {
+    ".nim-version",
+}
 
-    -- Required: Plugin author/maintainer
-    author = "elijahr",
-
-    -- Optional: Repository URL for plugin updates
-    updateUrl = "https://github.com/elijahr/vfox-nim",
-
-    -- Optional: Project homepage (registry listings surface this)
-    homepage = "https://github.com/elijahr/vfox-nim",
-
-    -- Optional: Minimum vfox runtime version required
-    minRuntimeVersion = "0.2.0",
-
-    -- Optional: Legacy version files this plugin can parse
-    legacyFilenames = {
-        ".nim-version",
-    },
-
-    -- Optional: Additional notes
-    notes = {
-        "Supports Linux, macOS, and Windows",
-        "Uses 4-level fallback: official binaries -> exact nightly -> generic nightly -> source",
-        "Ported from production-tested asdf-nim logic",
-        "Set GITHUB_TOKEN for higher API rate limits",
-    },
+PLUGIN.notes = {
+    "Supports Linux, macOS, and Windows",
+    "Uses 4-level fallback: official binaries -> exact nightly -> generic nightly -> source",
+    "Ported from production-tested asdf-nim logic",
+    "Set GITHUB_TOKEN for higher API rate limits",
 }
