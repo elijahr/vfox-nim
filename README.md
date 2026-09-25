@@ -12,6 +12,16 @@ Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/
 
 `vfox-nim` installs and manages Nim SDKs on Linux, macOS, and Windows. It downloads prebuilt binaries whenever possible—including on Apple Silicon and Linux ARM—and falls back to compiling from source when a binary is unavailable.
 
+> [!NOTE]
+> **Built-in `nim` vs `vfox-nim` in mise**:
+> `mise` includes built-in support for official stable releases via `http:nim`.
+>
+> Use `vfox-nim` if you need:
+> - **Nightly and development builds**: Direct support for `ref:devel` and exact Git commit hashes via `nim-lang/nightlies` without extra configuration.
+> - **Automatic source compilation**: Automatically compiles Nim from source when prebuilts are unavailable (`install_method = "source"` or architecture fallbacks).
+> - **Compiler module access**: Automatically configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work out of the box without cloning the compiler repository.
+> - **Standalone `vfox`**: Full support for the [VersionFox (vfox)](https://vfox.dev/) CLI on Linux, macOS, and Windows.
+
 ### Key Capabilities
 
 - **Fast binary downloads**: Automatically matches stable releases against prebuilt official releases or matching official nightlies.
@@ -40,20 +50,20 @@ Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/
 
 ### Using mise
 
-Install Nim directly using mise's vfox backend:
+To use `vfox-nim`, specify the `vfox:` backend prefix:
 
 ```bash
-# Install and set global default
+# Install and set global default via vfox-nim
 mise use -g vfox:elijahr/vfox-nim@latest
 ```
 
-Or register the plugin under the short name `nim`:
+Alternatively, if you want the unqualified name `nim` in mise to resolve to `vfox-nim` instead of mise's built-in `http:nim` backend, register the plugin:
 
 ```bash
-# Register plugin
+# Register plugin override
 mise plugin install nim https://github.com/elijahr/vfox-nim
 
-# Install and activate latest stable Nim
+# Now `nim` resolves to vfox-nim
 mise use -g nim@latest
 ```
 
@@ -85,10 +95,12 @@ vfox use -g nim@latest
 >
 > ```toml
 > [tools]
-> nim = "2.2.8"
+> "vfox:elijahr/vfox-nim" = "2.2.8"
 > "nimble:c2nim" = "latest"
 > "nimble:nimlsp" = "0.4.7"
 > ```
+>
+> *(Or `nim = "2.2.8"` if registered as a plugin override via `mise plugin install nim`)*
 >
 > This keeps your developer tooling isolated, version-controlled, and reproducible across teammates and CI runners.
 
@@ -98,35 +110,58 @@ vfox use -g nim@latest
 
 You can install specific releases, development branches, or exact commits:
 
+### Using mise
+
 ```bash
 # Latest stable release
-mise install nim@latest
+mise install vfox:elijahr/vfox-nim@latest
 
 # Specific release version
-mise install nim@2.2.8
+mise install vfox:elijahr/vfox-nim@2.2.8
 
 # Partial version prefix (resolves to latest matching release)
-mise install nim@2.2
-mise install nim@2
+mise install vfox:elijahr/vfox-nim@2.2
+mise install vfox:elijahr/vfox-nim@2
 
 # Nim development branch (uses prebuilt nightly if available, otherwise builds from source)
-mise install nim@ref:devel
+mise install vfox:elijahr/vfox-nim@ref:devel
 
 # Specific release branch or git commit
-mise install nim@ref:version-2-2
-mise install nim@ref:1a2b3c4
+mise install vfox:elijahr/vfox-nim@ref:version-2-2
+mise install vfox:elijahr/vfox-nim@ref:1a2b3c4
+```
+
+> **Note**: If you registered `vfox-nim` via `mise plugin install nim https://github.com/elijahr/vfox-nim`, you can use `nim@...` (e.g. `mise install nim@ref:devel`) directly. Without the plugin registered, bare `nim@...` commands in mise use its built-in `http:nim` backend.
+
+### Using vfox
+
+```bash
+# Latest stable release
+vfox install nim@latest
+
+# Specific release version
+vfox install nim@2.2.8
+
+# Development branch or commit
+vfox install nim@ref:devel
+vfox install nim@ref:1a2b3c4
 ```
 
 ### Project Version Files
 
-Pin the Nim version for your project with a `.nim-version` file:
+In `mise.toml`, declare the tool using the `vfox:` prefix (or `nim` if registered via `mise plugin install`):
+
+```toml
+[tools]
+"vfox:elijahr/vfox-nim" = "2.2.8"
+```
+
+If registered via `mise plugin install nim`, standard `.nim-version` and `.tool-versions` files are also supported:
 
 ```bash
 echo "2.2.8" > .nim-version
 mise install
 ```
-
-mise also supports standard `mise.toml` and `.tool-versions` files.
 
 > **Rate Limit Note**: The plugin queries the GitHub Releases API to resolve version tags and nightly binaries. In CI environments or behind shared NAT IPs, set `GITHUB_TOKEN` in your environment to prevent rate-limiting.
 
@@ -146,10 +181,12 @@ In `mise.toml`:
 
 ```toml
 [tools]
-nim = "2.2.8"
+"vfox:elijahr/vfox-nim" = "2.2.8"
 
 [env]
-_.nim = { install_method = "binary" }
+_."vfox:elijahr/vfox-nim" = { install_method = "binary" }
+# Or if registered as `nim`:
+# _.nim = { install_method = "binary" }
 ```
 
 Or via environment variable in your shell or CI workflow:
@@ -189,11 +226,101 @@ mise use nimble:nimlsp@latest
 
 ---
 
-## Continuous Integration: Using vfox & mise (GitHub Actions & Forgejo)
+## Continuous Integration: Using mise & vfox (GitHub Actions & Forgejo)
 
-Both `vfox` and `mise` can be used to set up Nim in CI across Linux, macOS, and Windows runners, including self-hosted Forgejo runners.
+Both `mise` and `vfox` can be used to set up Nim in CI across Linux, macOS, and Windows runners, including self-hosted Forgejo runners.
 
-### Option 1: Using `vfox` directly
+### Option 1: Using `mise` (Recommended for CI)
+
+`mise` provides first-class GitHub and Forgejo Actions support with built-in tool caching across Linux, macOS, and Windows.
+
+#### In GitHub Actions (Linux, macOS, Windows)
+
+##### Pattern A: With `mise.toml` in your repository (Recommended)
+
+In your repository `mise.toml`:
+
+```toml
+[tools]
+"vfox:elijahr/vfox-nim" = "2.2.8"
+```
+
+In `.github/workflows/ci.yml`:
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up mise & tools
+        uses: jdx/mise-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          cache: true
+
+      - name: Verify & Test
+        shell: bash
+        run: |
+          nim --version
+          nimble test
+```
+
+##### Pattern B: Inline plugin declaration (Without repository `mise.toml`)
+
+```yaml
+      - name: Set up mise & Nim
+        uses: jdx/mise-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          cache: true
+          plugins: |
+            nim https://github.com/elijahr/vfox-nim.git
+          tool_versions: |
+            nim 2.2.8
+```
+
+#### In Forgejo Actions (`act_runner` / Docker)
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: docker
+    container:
+      image: catthehacker/ubuntu:act-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies & mise
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git xz-utils
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+
+      - name: Install Nim via vfox-nim & run tests
+        run: |
+          export MISE_GITHUB_ATTESTATIONS=0
+          mise plugin install nim https://github.com/elijahr/vfox-nim.git
+          mise use -g nim@2.2.8
+          nim --version
+          nimble test
+```
+
+### Option 2: Using standalone `vfox`
 
 #### In GitHub Actions (Linux, macOS, Windows)
 
@@ -281,69 +408,6 @@ jobs:
           eval "$(vfox activate bash)"
           nim --version
           nimble --version
-          nimble test
-```
-
-### Option 2: Using `mise`
-
-#### In GitHub Actions
-
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up mise
-        uses: jdx/mise-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          plugins: |
-            nim https://github.com/elijahr/vfox-nim.git
-
-      - name: Verify & Test
-        shell: bash
-        run: |
-          nim --version
-          nimble test
-```
-
-#### In Forgejo Actions
-
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: docker
-    container:
-      image: catthehacker/ubuntu:act-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies & mise
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git xz-utils
-          curl -fsSL https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
-
-      - name: Install Nim & run tests
-        run: |
-          export MISE_GITHUB_ATTESTATIONS=0
-          mise plugin install nim https://github.com/elijahr/vfox-nim.git
-          mise use -g nim@2.2.8
-          nim --version
           nimble test
 ```
 
