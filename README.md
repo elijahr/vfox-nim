@@ -14,22 +14,23 @@ Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/
 
 > [!NOTE]
 > **Built-in `nim` vs `vfox-nim` in mise**:
-> `mise` includes built-in support for official stable releases via `http:nim`.
+> `mise` includes built-in support for official stable releases via `http:nim`. However, the built-in `http:nim` backend only downloads precompiled static archives from `nim-lang.org`—if a prebuilt binary does not exist for your architecture or requested version, the installation fails.
 >
-> Use `vfox-nim` if you need:
+> In contrast, `vfox-nim`:
+> - **Builds from source when binaries are unavailable**: Automatically compiles Nim from C bootstrap sources (`build_all.sh` / `koch`) if official prebuilts or nightlies are not published for your platform or version (the official `http:nim` backend cannot build from source).
 > - **Nightly and development builds**: Direct support for `ref:devel` and exact Git commit hashes via `nim-lang/nightlies` without extra configuration.
-> - **Automatic source compilation**: Automatically compiles Nim from source when prebuilts are unavailable (`install_method = "source"` or architecture fallbacks).
 > - **Compiler module access**: Automatically configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work out of the box without cloning the compiler repository.
 > - **Standalone `vfox`**: Full support for the [VersionFox (vfox)](https://vfox.dev/) CLI on Linux, macOS, and Windows.
 
 ### Key Capabilities
 
-- **Fast binary downloads**: Automatically matches stable releases against prebuilt official releases or matching official nightlies.
-- **Apple Silicon and ARM support**: Provides prebuilt binaries for macOS ARM64 and Linux ARM, avoiding lengthy source compilations.
+- **Automatic source compilation fallback**: Unlike the official `http:nim` backend (which strictly unpacks prebuilt archives and fails if none exist), `vfox-nim` automatically falls back to compiling from source when a prebuilt binary is unavailable for your platform or version.
+- **Fast binary downloads**: Automatically matches stable releases against prebuilt official releases or matching official nightlies across Linux, macOS (Apple Silicon & Intel), and Windows.
+- **Apple Silicon and ARM support**: Provides prebuilt binaries for macOS ARM64 and Linux ARM, falling back to source compilation seamlessly if necessary.
 - **Out-of-the-box compiler module access**: Configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work immediately without extra compiler flags or redownloading Nim.
 - **Full toolchain**: Installs `nim`, `nimble`, `nimsuggest`, `nimpretty`, and standard development tools.
 - **Standard package sharing**: Preserves standard Nimble package locations, CLI tools in `~/.nimble/bin`, project-local `nimbledeps`, and Atlas workspaces.
-- **Install method control**: Choose between `auto` (default), `binary` (prebuilt only), or `source` (compile from source).
+- **Install method control**: Choose between `auto` (default: binary with source fallback), `binary` (prebuilt only), or `source` (force compile from source).
 
 ---
 
@@ -43,6 +44,8 @@ Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/
 | **macOS Apple Silicon (arm64)** |   ✅ Nightly match    |      ✅      | Native runner |
 | **macOS Intel (x86_64)**        |   ✅ Nightly match    |      ✅      | Native runner |
 | **Windows x86_64**              | ✅ Official & Nightly |      ❌      | Native runner |
+
+> *Note: On platforms without prebuilt official binaries (such as Linux ARMv7, or older Nim versions on macOS ARM64), `vfox-nim` automatically builds Nim from source, whereas the official mise `http:nim` backend will error out.*
 
 ---
 
@@ -171,7 +174,7 @@ mise install
 
 Control how the plugin installs Nim by setting `install_method`:
 
-- **`auto`** (default): Uses official binaries first, falls back to matching nightlies, and compiles from source if no binary exists.
+- **`auto`** (default): Uses official binaries first, falls back to matching nightlies, and automatically compiles from source if no prebuilt binary exists for your platform or version (in contrast to mise's built-in `http:nim` backend, which errors out when prebuilt binaries are unavailable).
 - **`binary`**: Prebuilt binaries only. Fails with an error if no prebuilt binary is available for your platform.
 - **`source`**: Compiles Nim from source using C bootstrap sources (`build_all.sh` / `koch`). Not supported on Windows.
 
