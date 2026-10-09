@@ -53,8 +53,7 @@ runs:
               ARCHIVE_NAME="vfox_${{ inputs.vfox-version }}_${VFOX_OS}_${VFOX_ARCH}.tar.gz"
               DOWNLOAD_URL="https://github.com/version-fox/vfox/releases/download/v${{ inputs.vfox-version }}/${ARCHIVE_NAME}"
               curl -sSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"
-              tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$TMP_DIR"
-              cp "$TMP_DIR/vfox_${{ inputs.vfox-version }}_${VFOX_OS}_${VFOX_ARCH}/vfox" "$VFOX_INSTALL_DIR/vfox"
+              tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$VFOX_INSTALL_DIR" --strip-components=1
               chmod +x "$VFOX_INSTALL_DIR/vfox"
               ;;
             darwin*)
@@ -67,8 +66,7 @@ runs:
               ARCHIVE_NAME="vfox_${{ inputs.vfox-version }}_${VFOX_OS}_${VFOX_ARCH}.tar.gz"
               DOWNLOAD_URL="https://github.com/version-fox/vfox/releases/download/v${{ inputs.vfox-version }}/${ARCHIVE_NAME}"
               curl -sSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"
-              tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$TMP_DIR"
-              cp "$TMP_DIR/vfox_${{ inputs.vfox-version }}_${VFOX_OS}_${VFOX_ARCH}/vfox" "$VFOX_INSTALL_DIR/vfox"
+              tar -xzf "$TMP_DIR/$ARCHIVE_NAME" -C "$VFOX_INSTALL_DIR" --strip-components=1
               chmod +x "$VFOX_INSTALL_DIR/vfox"
               ;;
             mingw*|msys*|cygwin*|windows*)
@@ -81,8 +79,7 @@ runs:
               ARCHIVE_NAME="vfox_${{ inputs.vfox-version }}_${VFOX_OS}_${VFOX_ARCH}.zip"
               DOWNLOAD_URL="https://github.com/version-fox/vfox/releases/download/v${{ inputs.vfox-version }}/${ARCHIVE_NAME}"
               curl -sSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"
-              unzip -q "$TMP_DIR/$ARCHIVE_NAME" -d "$TMP_DIR"
-              cp "$TMP_DIR/vfox_${{ inputs.vfox-version }}_${VFOX_OS}_${VFOX_ARCH}/vfox.exe" "$VFOX_INSTALL_DIR/vfox.exe"
+              unzip -j -o "$TMP_DIR/$ARCHIVE_NAME" '*/vfox.exe' -d "$VFOX_INSTALL_DIR"
               ;;
             *)
               echo "::error::Unsupported OS for vfox: $OS_NAME"
@@ -91,7 +88,11 @@ runs:
           esac
 
           rm -rf "$TMP_DIR"
-          echo "$VFOX_INSTALL_DIR" >> "$GITHUB_PATH"
+          if command -v cygpath >/dev/null 2>&1; then
+            echo "$(cygpath -w "$VFOX_INSTALL_DIR")" >> "$GITHUB_PATH"
+          else
+            echo "$VFOX_INSTALL_DIR" >> "$GITHUB_PATH"
+          fi
           export PATH="$VFOX_INSTALL_DIR:$PATH"
         fi
 
@@ -101,6 +102,9 @@ runs:
         # 2. Package and register vfox-nim plugin
         VFOX_ROOT="${VFOX_HOME:-$HOME/.version-fox}"
         mkdir -p "$VFOX_ROOT/plugin"
+        if command -v cygpath >/dev/null 2>&1; then
+          export VFOX_HOME="$(cygpath -w "$VFOX_ROOT")"
+        fi
 
         PYTHON_BIN="python3"
         if ! command -v python3 >/dev/null 2>&1; then
@@ -108,11 +112,25 @@ runs:
         fi
 
         PLUGIN_ZIP_BASE="$(mktemp -u)"
-        $PYTHON_BIN -c "import shutil; shutil.make_archive(r'$PLUGIN_ZIP_BASE', 'zip', r'${{ github.action_path }}')"
+        ACTION_PATH="${{ github.action_path }}"
+        if command -v cygpath >/dev/null 2>&1; then
+          PY_ZIP_BASE="$(cygpath -w "$PLUGIN_ZIP_BASE")"
+          PY_ACTION_PATH="$(cygpath -w "$ACTION_PATH")"
+        else
+          PY_ZIP_BASE="$PLUGIN_ZIP_BASE"
+          PY_ACTION_PATH="$ACTION_PATH"
+        fi
+
+        $PYTHON_BIN -c "import shutil; shutil.make_archive(r'$PY_ZIP_BASE', 'zip', r'$PY_ACTION_PATH')"
         PLUGIN_ZIP="${PLUGIN_ZIP_BASE}.zip"
+        if command -v cygpath >/dev/null 2>&1; then
+          VFOX_PLUGIN_ZIP="$(cygpath -w "$PLUGIN_ZIP")"
+        else
+          VFOX_PLUGIN_ZIP="$PLUGIN_ZIP"
+        fi
 
         vfox remove -y nim 2>/dev/null || true
-        vfox add --source "$PLUGIN_ZIP" --alias nim
+        vfox add --source "$VFOX_PLUGIN_ZIP" --alias nim
         rm -f "$PLUGIN_ZIP"
 
         # 3. Install requested Nim / Nimony version
@@ -120,8 +138,8 @@ runs:
 
         # 4. Locate installed binary directory and expose to GITHUB_PATH
         SEARCH_DIRS=("$HOME/.version-fox" "$HOME/.vfox")
-        if [ -n "${VFOX_HOME:-}" ]; then
-          SEARCH_DIRS=("$VFOX_HOME" "${SEARCH_DIRS[@]}")
+        if [ -n "${VFOX_ROOT:-}" ]; then
+          SEARCH_DIRS=("$VFOX_ROOT" "${SEARCH_DIRS[@]}")
         fi
 
         NIM_EXE=""
@@ -148,12 +166,20 @@ runs:
         BIN_DIR="$(dirname "$NIM_EXE")"
         echo "Found compiler binary at: $NIM_EXE"
         echo "Adding $BIN_DIR to GITHUB_PATH"
-        echo "$BIN_DIR" >> "$GITHUB_PATH"
+        if command -v cygpath >/dev/null 2>&1; then
+          echo "$(cygpath -w "$BIN_DIR")" >> "$GITHUB_PATH"
+        else
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+        fi
 
         # Expose ~/.nimble/bin to PATH for nimble-installed packages
         NIMBLE_BIN="$HOME/.nimble/bin"
         mkdir -p "$NIMBLE_BIN"
-        echo "$NIMBLE_BIN" >> "$GITHUB_PATH"
+        if command -v cygpath >/dev/null 2>&1; then
+          echo "$(cygpath -w "$NIMBLE_BIN")" >> "$GITHUB_PATH"
+        else
+          echo "$NIMBLE_BIN" >> "$GITHUB_PATH"
+        fi
 
         # Verify execution
         "$NIM_EXE" --version || true
