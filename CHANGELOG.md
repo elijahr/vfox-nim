@@ -6,6 +6,18 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Support for Nimony nightly toolchain:
+  - Added detection for versions such as `nimony`, `nimony-latest`, `ref:nimony`, and specific versions/nightlies like `nimony-0.6.3` or `nightly-0.6.3-b3806c1ce`.
+  - Added GitHub release discovery against `nim-lang/nimony-website` for official prebuilt nightlies on Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64).
+  - Added archive restructuring and post-install configuration for Nimony layout, ensuring executable permissions on `bin/` and symlinking `bin/nim -> bin/nimony`.
+  - Expose `nimony-latest` and recent Nimony releases in `Available` hook.
+- Composite GitHub Action (`action.yml`):
+  - Provides a single-step GitHub Action (`uses: elijahr/vfox-nim@main`) supporting Linux, macOS, and Windows runners.
+  - Automatically bootstraps `vfox` CLI if not already installed, packages and registers `vfox-nim`, and installs the requested Nim or Nimony version.
+  - Exposes compiler binaries (`nim`, `nimble`, `nimony`) and `~/.nimble/bin` to `$GITHUB_PATH`.
+
 ## [0.2.2] - 2026-09-25
 
 ### Added

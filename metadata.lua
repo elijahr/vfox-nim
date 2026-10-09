@@ -26,6 +26,7 @@ PLUGIN.legacyFilenames = {
 PLUGIN.notes = {
     "Supports Linux, macOS, and Windows",
     "Uses 4-level fallback: official binaries -> exact nightly -> generic nightly -> source",
+    "Supports Nimony nightly builds (nimony, nimony-latest, ref:nimony, nimony-0.6.3)",
     "Ported from production-tested asdf-nim logic",
     "Set GITHUB_TOKEN for higher API rate limits",
 }

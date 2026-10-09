@@ -26,13 +26,14 @@ function PLUGIN:PreInstall(ctx)
     local os_name = utils.normalize_os(RUNTIME.osType)
     local arch = utils.normalize_arch(RUNTIME.archType, os_name)
 
-    -- Determine if this is a stable version or ref
-    local is_stable = utils.is_stable_version(version)
-    local is_ref = utils.is_ref_version(version)
+    -- Determine if this is a Nimony version, stable version, or ref
+    local is_nimony = utils.is_nimony_version(version)
+    local is_stable = not is_nimony and utils.is_stable_version(version)
+    local is_ref = not is_nimony and utils.is_ref_version(version)
 
     -- Extract ref prefix if present
     local actual_version = version
-    if is_ref then
+    if is_ref or (is_nimony and utils.is_ref_version(version)) then
         actual_version = version:gsub("^ref:", "")
     end
 
@@ -50,6 +51,42 @@ function PLUGIN:PreInstall(ctx)
             error("[vfox-nim] Dry-run completed successfully (no files downloaded).")
         end
         return resolved
+    end
+
+    -- Handle Nimony requests (official nightlies from nim-lang/nimony-website)
+    if is_nimony then
+        if install_method == "source" then
+            error(
+                "Building Nimony from source is not supported by vfox-nim. "
+                    .. "Official nightly binaries are provided for Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64). "
+                    .. "Please use install_method='auto' or 'binary'."
+            )
+        end
+
+        local nimony_url, resolved_tag = utils.find_nimony_url(actual_version, os_name, arch)
+        if nimony_url then
+            return finish({
+                version = actual_version,
+                url = nimony_url,
+                note = "Nimony nightly binary from nim-lang/nimony-website for "
+                    .. os_name
+                    .. "/"
+                    .. arch
+                    .. " ("
+                    .. (resolved_tag or actual_version)
+                    .. ")",
+            })
+        else
+            error(
+                "No pre-built Nimony binary available for version '"
+                    .. version
+                    .. "' on "
+                    .. os_name
+                    .. "/"
+                    .. arch
+                    .. ". (Supported platforms: Linux x86_64/arm64, macOS arm64, Windows x86_64)."
+            )
+        end
     end
 
     -- If install_method is "source", skip binary lookups and build from source

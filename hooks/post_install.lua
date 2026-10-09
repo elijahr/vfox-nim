@@ -90,13 +90,14 @@ function PLUGIN:PostInstall(ctx)
     end
 
     -- Check if we need to restructure the archive
-    -- mise: extracts to /path/to/install -> need to move nim-VERSION/* up
+    -- mise: extracts to /path/to/install -> need to move nim-VERSION/* or nimony/* up
     -- vfox: extracts to /path/to/nim-VERSION -> files are already in place
     local path_basename = path:match("([^/\\]+)$")
-    local needs_restructure = not path_basename:match("^nim%-")
+    local nimony_dir_exists = file_exists(path .. "/nimony")
+    local needs_restructure = (not path_basename:match("^nim%-")) or nimony_dir_exists
 
     if needs_restructure then
-        -- Look for nim-* subdirectory and move contents up.
+        -- Look for nim-* or nimony subdirectory and move contents up.
         local found_dir = nil
         if is_windows then
             -- On Windows cmd.exe, dir /b /ad lists directory names matching pattern
@@ -108,9 +109,19 @@ function PLUGIN:PostInstall(ctx)
                     found_dir = path .. "/" .. first_line
                 end
             end
+            if not found_dir then
+                local win_nimony_cmd = win_exec_str('dir /b /ad "' .. native_path(path) .. '\\nimony" 2>nul')
+                local ok2, out2 = exec(win_nimony_cmd)
+                if ok2 and out2 and out2 ~= "" then
+                    local first_line = out2:match("([^\r\n]+)")
+                    if first_line then
+                        found_dir = path .. "/" .. first_line
+                    end
+                end
+            end
         else
-            -- Unix: find or ls
-            local ok, out = exec('ls -d "' .. path .. '"/nim-* 2>/dev/null | head -1')
+            -- Unix: find or ls (check both nim-* and nimony subdirectories)
+            local ok, out = exec('ls -d "' .. path .. '"/nim-* "' .. path .. '"/nimony 2>/dev/null | head -1')
             if ok and out and out ~= "" then
                 found_dir = out:gsub("%s+$", "")
             end
@@ -133,9 +144,11 @@ function PLUGIN:PostInstall(ctx)
         end
     end
 
-    -- Check if we already have a working binary (nightly builds come with pre-built binaries)
+    -- Check if we already have a working binary (nightly builds and nimony come with pre-built binaries)
     local nim_binary = path .. "/bin/nim" .. nim_ext
-    local has_binary = file_exists(nim_binary)
+    local nimony_binary = path .. "/bin/nimony" .. nim_ext
+    local is_nimony = file_exists(nimony_binary)
+    local has_binary = file_exists(nim_binary) or is_nimony
 
     if not has_binary then
         -- No binary exists, check if we need to build from source
@@ -160,6 +173,27 @@ function PLUGIN:PostInstall(ctx)
     else
         -- Binary exists - no build needed
         print("Using pre-built Nim binary")
+    end
+
+    -- For Nimony installations: ensure bin/ permissions and symlink bin/nim -> bin/nimony
+    if is_nimony then
+        -- Ensure all binaries in bin/ are executable on POSIX
+        if not is_windows then
+            exec('chmod +x "' .. path .. '/bin"/* 2>/dev/null || true')
+        end
+
+        -- Symlink or copy bin/nim -> bin/nimony so standard `nim` commands work
+        if not file_exists(nim_binary) then
+            if is_windows then
+                exec(
+                    win_exec_str(
+                        'copy /y "' .. native_path(nimony_binary) .. '" "' .. native_path(nim_binary) .. '" 2>nul'
+                    )
+                )
+            else
+                exec('ln -sf nimony "' .. path .. '/bin/nim"')
+            end
+        end
     end
 
     -- Verify installation
@@ -190,8 +224,10 @@ function PLUGIN:PostInstall(ctx)
         io.close(f)
     else
         -- Unix: run `nim --version` to catch broken source builds.
+        -- Standard Nim reports "Nim Compiler Version X.Y.Z ..."; Nimony reports "X.Y.Z [os; arch]"
         local success, output = exec('"' .. nim_binary .. '" --version')
-        if not success or not output:match("Nim Compiler") then
+        local valid = success and (output:match("Nim Compiler") or (is_nimony and output:match("%d+%.%d+")))
+        if not valid then
             error("Nim installation verification failed. Output: " .. (output or "none"))
         end
     end
