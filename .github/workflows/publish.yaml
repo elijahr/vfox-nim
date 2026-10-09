@@ -1,15 +1,17 @@
 name: Plugin
 
+# yamllint disable rule:truthy
 on:
   pull_request:
   push:
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Plugin version, for example 0.5.5 (without v)'
+        description: "Plugin version, for example 0.5.5 (without v)"
         required: true
         type: string
+# yamllint enable rule:truthy
 
 permissions:
   contents: read
