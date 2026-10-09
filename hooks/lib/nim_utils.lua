@@ -104,6 +104,120 @@ function M.is_ref_version(version)
     return version:match("^ref:") ~= nil
 end
 
+-- Nimony detection and URL resolution
+-- Nimony nightly binaries are published on https://github.com/nim-lang/nimony-website/releases
+function M.is_nimony_version(version)
+    if not version then
+        return false
+    end
+    local v = version:lower()
+    return v == "nimony"
+        or v == "nimony-latest"
+        or v == "ref:nimony"
+        or v == "ref:nimony-latest"
+        or v:match("^nimony%-") ~= nil
+        or v:match("^ref:nimony") ~= nil
+        or v:match("^nightly%-%d") ~= nil
+        or v:match("^ref:nightly%-%d") ~= nil
+end
+
+-- Get platform asset suffix for Nimony prebuilts:
+-- Linux:   linux_amd64.tar.xz, linux_arm64.tar.xz
+-- macOS:   macos_arm64.tar.xz (ARM64 only; no x86_64 prebuilt)
+-- Windows: windows_amd64.zip
+function M.get_nimony_platform_suffix(os_name, arch)
+    if os_name == "linux" then
+        if arch == "x86_64" then
+            return "linux_amd64.tar.xz"
+        elseif arch == "aarch64" or arch == "arm64" then
+            return "linux_arm64.tar.xz"
+        end
+    elseif os_name == "macos" then
+        if arch == "arm64" or arch == "aarch64" then
+            return "macos_arm64.tar.xz"
+        end
+    elseif os_name == "windows" then
+        if arch == "x86_64" then
+            return "windows_amd64.zip"
+        end
+    end
+    return nil
+end
+
+-- Find Nimony download URL from nim-lang/nimony-website releases
+function M.find_nimony_url(version, os_name, arch)
+    local platform_suffix = M.get_nimony_platform_suffix(os_name, arch)
+    if not platform_suffix then
+        return nil, "Platform " .. os_name .. "/" .. arch .. " is not supported by Nimony prebuilts"
+    end
+
+    local target = (version or "latest"):lower()
+    target = target:gsub("^ref:", "")
+
+    local is_latest = (target == "nimony" or target == "nimony-latest" or target == "latest" or target == "")
+    local target_spec = nil
+    if not is_latest then
+        target_spec = target:gsub("^nimony%-?", "")
+    end
+
+    local http = require("http")
+    local json = require("json")
+
+    local api_url = "https://api.github.com/repos/nim-lang/nimony-website/releases?per_page=100"
+    local resp, err = http.get({ url = api_url, headers = M.get_github_headers() })
+
+    if err == nil and resp and resp.status_code == 200 and resp.body then
+        local ok, releases = pcall(json.decode, resp.body)
+        if ok and type(releases) == "table" and #releases > 0 then
+            for _, release in ipairs(releases) do
+                local matches = false
+                if is_latest then
+                    matches = true
+                else
+                    local tag = (release.tag_name or ""):lower()
+                    if
+                        tag == target
+                        or tag == target_spec
+                        or tag == "nightly-" .. target_spec
+                        or tag:find("-" .. target_spec .. "-", 1, true)
+                        or tag:find("-" .. target_spec .. "$", 1, true)
+                        or tag:find(target_spec, 1, true)
+                    then
+                        matches = true
+                    end
+                end
+
+                if matches then
+                    for _, asset in ipairs(release.assets or {}) do
+                        local aname = (asset.name or ""):lower()
+                        if aname:sub(-#platform_suffix) == platform_suffix then
+                            return asset.browser_download_url, release.tag_name
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Direct tag fallback (handles rate-limited GitHub API when exact version or nightly is provided)
+    if target_spec and target_spec ~= "" then
+        local direct_tag = target
+        if not direct_tag:match("^nightly%-") then
+            direct_tag = "nightly-" .. target_spec
+        end
+        local asset_name = "nimony-" .. target_spec .. "-" .. platform_suffix
+        local direct_url = "https://github.com/nim-lang/nimony-website/releases/download/"
+            .. direct_tag
+            .. "/"
+            .. asset_name
+        if M.url_exists(direct_url) then
+            return direct_url, direct_tag
+        end
+    end
+
+    return nil, "No Nimony release found matching '" .. version .. "' for " .. os_name .. "/" .. arch
+end
+
 -- Platform detection.
 -- Authoritative inside a hook: vfox/mise injects RUNTIME.osType. Fall back to the
 -- OS env var (Windows_NT on all Windows), then uname, for standalone/test contexts.

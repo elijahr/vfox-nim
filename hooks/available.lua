@@ -74,6 +74,38 @@ function PLUGIN:Available(ctx)
         end
     end
 
+    -- 2. Expose Nimony releases from nim-lang/nimony-website
+    local nimony_url = "https://api.github.com/repos/nim-lang/nimony-website/releases?per_page=10"
+    local n_resp, n_err = http.get({
+        url = nimony_url,
+        headers = get_github_headers(),
+    })
+
+    local nimony_versions = {
+        { version = "nimony-latest" },
+    }
+
+    if n_err == nil and n_resp and n_resp.status_code == 200 and n_resp.body then
+        local ok, releases = pcall(json.decode, n_resp.body)
+        if ok and type(releases) == "table" then
+            local seen = {}
+            for _, release in ipairs(releases) do
+                if release.tag_name then
+                    local v = release.tag_name:match("^nightly%-(%d+%.%d+%.%d+)")
+                    if v and not seen[v] then
+                        seen[v] = true
+                        table.insert(nimony_versions, { version = "nimony-" .. v })
+                    end
+                end
+            end
+        end
+    end
+
+    -- Insert nimony versions at the beginning of the list
+    for i = #nimony_versions, 1, -1 do
+        table.insert(versions, 1, nimony_versions[i])
+    end
+
     -- Note: We don't list nightly "ref:" versions here because:
     -- 1. mise filters out non-standard version formats from ls-remote
     -- 2. Users can still use them directly: `mise install nim@ref:devel`
