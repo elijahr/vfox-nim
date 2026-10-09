@@ -36,6 +36,9 @@ runs:
         if [ -z "$TARGET_VERSION" ]; then
           TARGET_VERSION="${{ inputs.version }}"
         fi
+        if [ "$TARGET_VERSION" = "stable" ]; then
+          TARGET_VERSION="latest"
+        fi
         echo "Requested Nim version: $TARGET_VERSION"
 
         # 1. Install vfox CLI if not present
