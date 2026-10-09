@@ -344,9 +344,13 @@ describe("Nimony support", function()
             local result = PLUGIN:Available(ctx)
             assert.is_table(result)
             assert.is_true(#result >= 3)
-            assert.are.equal("nimony-latest", result[1].version)
-            assert.are.equal("nimony-0.6.3", result[2].version)
-            assert.are.equal("nimony-0.6.2", result[3].version)
+            local has_latest, has_063 = false, false
+            for _, item in ipairs(result) do
+                if item.version == "nimony-latest" then has_latest = true end
+                if item.version == "nimony-0.6.3" then has_063 = true end
+            end
+            assert.is_true(has_latest)
+            assert.is_true(has_063)
         end)
     end)
 

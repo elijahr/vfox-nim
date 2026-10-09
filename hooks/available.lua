@@ -101,9 +101,9 @@ function PLUGIN:Available(ctx)
         end
     end
 
-    -- Insert nimony versions at the beginning of the list
-    for i = #nimony_versions, 1, -1 do
-        table.insert(versions, 1, nimony_versions[i])
+    -- Append nimony versions at the end of the list so stable Nim releases remain primary
+    for _, nv in ipairs(nimony_versions) do
+        table.insert(versions, nv)
     end
 
     -- Note: We don't list nightly "ref:" versions here because:
