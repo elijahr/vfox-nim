@@ -16,12 +16,18 @@ inputs:
     description: "Version of vfox CLI to install if not present"
     required: false
     default: "1.0.11"
+  github-token:
+    description: "GitHub token for authenticated API calls (defaults to github.token)"
+    required: false
+    default: "${{ github.token }}"
 
 runs:
   using: "composite"
   steps:
     - name: Set up Nim via vfox-nim
       shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
 

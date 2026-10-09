@@ -391,6 +391,30 @@ function M.write_cache(cache_file, version, hash, date)
     end
 end
 
+-- Static mapping of known stable releases to their git commit hash and nightly release date.
+-- Acts as a zero-network / rate-limit-immune fallback when the GitHub API is unavailable.
+M.KNOWN_COMMITS = {
+    ["2.2.12"] = { hash = "8e8fbf60693418dc95bb0d762fd660231d08a583", date = "2026-09-08" },
+    ["2.2.10"] = { hash = "bfeb3146d1638b39f69007a4ae5a23e23ae4e5ef", date = "2026-04-24" },
+    ["2.2.8"] = { hash = "4f500679b196fad944caa50a753f5bbfaefda001", date = "2026-02-23" },
+    ["2.2.6"] = { hash = "ab00c56904e3126ad826bb520d243513a139436a", date = "2025-10-31" },
+    ["2.2.4"] = { hash = "f7145dd26efeeeb6eeae6fff649db244d81b212d", date = "2025-04-22" },
+    ["2.2.2"] = { hash = "6c34f62785263ad412f662f3e4e4bf8d8751d113", date = "2025-02-06" },
+    ["2.2.0"] = { hash = "78983f1876726a49c69d65629ab433ea1310ece1", date = "2024-10-02" },
+    ["2.0.16"] = { hash = "82f3a57612598d73e6fc559bd80b995c4b20edd5", date = "2025-04-22" },
+    ["2.0.14"] = { hash = "bf4de6a394e040d9810cba8c69fb2829ff04dcc6", date = "2024-12-23" },
+    ["2.0.12"] = { hash = "ce7c6f4f3365db2cc63bdd9d460c71ed937ee9e9", date = "2024-11-01" },
+    ["2.0.10"] = { hash = "e941ee15be775fe3c46db1bed9b4f41c7dfb1334", date = "2024-10-01" },
+    ["2.0.8"] = { hash = "5935c3bfa9fec6505394867b23510eb5cbab3dbf", date = "2024-07-03" },
+    ["2.0.6"] = { hash = "c00e8e71e0c8465b5a5257c76c674b803273b222", date = "2024-06-17" },
+    ["2.0.4"] = { hash = "b47747d31844c6bd9af4322efe55e24fefea544c", date = "2024-03-28" },
+    ["2.0.2"] = { hash = "c4c44d10df8a14204a75c34e499def200589cb7c", date = "2023-12-15" },
+    ["2.0.0"] = { hash = "a488067a4130f029000be4550a0fb1b39e0e9e7c", date = "2023-08-01" },
+    ["1.6.20"] = { hash = "19fdbfc173bfccb64cb64e0a963e69f52f71fc73", date = "2024-04-07" },
+    ["1.6.18"] = { hash = "a749a8b742bd0a4272c26a65517275db4720e58a", date = "2023-12-15" },
+    ["1.6.16"] = { hash = "a08f56f9ba6136a0618da27f805849b95285dc3c", date = "2023-10-10" },
+}
+
 -- Get commit hash and date for version tag (from asdf-nim:578-637)
 function M.get_version_commit_info(version)
     local home = os.getenv("HOME") or os.getenv("USERPROFILE") or os.getenv("LOCALAPPDATA") or "."
@@ -461,6 +485,13 @@ function M.get_version_commit_info(version)
                 return commit_hash, commit_date
             end
         end
+    end
+
+    -- Fallback to known stable release commit metadata if API was rate-limited or unreachable
+    if M.KNOWN_COMMITS and M.KNOWN_COMMITS[version] then
+        local fallback = M.KNOWN_COMMITS[version]
+        M.write_cache(cache_file, version, fallback.hash, fallback.date)
+        return fallback.hash, fallback.date
     end
 
     return commit_hash, nil
