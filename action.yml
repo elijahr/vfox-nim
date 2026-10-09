@@ -121,7 +121,7 @@ runs:
           PY_ACTION_PATH="$ACTION_PATH"
         fi
 
-        $PYTHON_BIN -c "import shutil; shutil.make_archive(r'$PY_ZIP_BASE', 'zip', r'$PY_ACTION_PATH')"
+        $PYTHON_BIN -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" "$PY_ZIP_BASE" "$PY_ACTION_PATH"
         PLUGIN_ZIP="${PLUGIN_ZIP_BASE}.zip"
         if command -v cygpath >/dev/null 2>&1; then
           VFOX_PLUGIN_ZIP="$(cygpath -w "$PLUGIN_ZIP")"
