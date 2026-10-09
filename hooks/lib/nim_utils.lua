@@ -101,7 +101,15 @@ function M.is_stable_version(version)
 end
 
 function M.is_ref_version(version)
-    return version:match("^ref:") ~= nil
+    if not version then
+        return false
+    end
+    local v = version:lower()
+    return v:match("^ref:") ~= nil
+        or v == "devel"
+        or v == "nightly"
+        or v == "head"
+        or v:match("^version%-%d") ~= nil
 end
 
 -- Nimony detection and URL resolution

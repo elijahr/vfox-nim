@@ -35,6 +35,9 @@ function PLUGIN:PreInstall(ctx)
     local actual_version = version
     if is_ref or (is_nimony and utils.is_ref_version(version)) then
         actual_version = version:gsub("^ref:", "")
+        if actual_version:lower() == "nightly" then
+            actual_version = "devel"
+        end
     end
 
     -- Handle dry-run diagnostic mode (Issue #6)
