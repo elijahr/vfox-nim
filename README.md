@@ -1,6 +1,6 @@
 # vfox-nim
 
-Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/).
+Nim version manager plugin for [mise](https://mise.jdx.dev/) and [vfox](https://vfox.dev/). Installs Nim and the Nimony toolchain on Linux, macOS, and Windows.
 
 [![CI](https://github.com/elijahr/vfox-nim/actions/workflows/test.yml/badge.svg)](https://github.com/elijahr/vfox-nim/actions/workflows/test.yml)
 [![Latest release](https://img.shields.io/github/v/release/elijahr/vfox-nim)](https://github.com/elijahr/vfox-nim/releases)
@@ -8,465 +8,130 @@ Fast, cross-platform Nim version manager plugin for [mise](https://mise.jdx.dev/
 
 ---
 
-## Overview
+## Why use this?
 
-`vfox-nim` installs and manages Nim SDKs on Linux, macOS, and Windows. It downloads prebuilt binaries whenever possible—including on Apple Silicon and Linux ARM—and falls back to compiling from source when a binary is unavailable.
-
-> [!NOTE]
-> **Built-in `nim` vs `vfox-nim` in mise**:
-> `mise` includes built-in support for official stable releases via `http:nim`. However, the built-in `http:nim` backend only downloads precompiled static archives from `nim-lang.org`—if a prebuilt binary does not exist for your architecture or requested version, the installation fails.
->
-> In contrast, `vfox-nim`:
->
-> - **Builds from source when binaries are unavailable**: Automatically compiles Nim from C bootstrap sources (`build_all.sh` / `koch`) if official prebuilts or nightlies are not published for your platform or version (the official `http:nim` backend cannot build from source).
-> - **Nightly and development builds**: Direct support for `ref:devel` and exact Git commit hashes via `nim-lang/nightlies` without extra configuration.
-> - **Compiler module access**: Automatically configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work out of the box without cloning the compiler repository.
-> - **Standalone `vfox`**: Full support for the [VersionFox (vfox)](https://vfox.dev/) CLI on Linux, macOS, and Windows.
-
-### Key Capabilities
-
-- **Automatic source compilation fallback**: Unlike the official `http:nim` backend (which strictly unpacks prebuilt archives and fails if none exist), `vfox-nim` automatically falls back to compiling from source when a prebuilt binary is unavailable for your platform or version.
-- **Fast binary downloads**: Automatically matches stable releases against prebuilt official releases or matching official nightlies across Linux, macOS (Apple Silicon & Intel), and Windows.
-- **Apple Silicon and ARM support**: Provides prebuilt binaries for macOS ARM64 and Linux ARM, falling back to source compilation seamlessly if necessary.
-- **Out-of-the-box compiler module access**: Configures `path = "$nim"` in `config/nim.cfg` so packages that import compiler internals (`import compiler/ast`) work immediately without extra compiler flags or redownloading Nim.
-- **Full toolchain**: Installs `nim`, `nimble`, `nimsuggest`, `nimpretty`, and standard development tools.
-- **Standard package sharing**: Preserves standard Nimble package locations, CLI tools in `~/.nimble/bin`, project-local `nimbledeps`, and Atlas workspaces.
-- **Install method control**: Choose between `auto` (default: binary with source fallback), `binary` (prebuilt only), or `source` (force compile from source).
+- **Prebuilts across platforms**: Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64).
+- **Source build fallback**: Automatically compiles Nim from C source bootstrap if a prebuilt binary is not published for your platform or requested version (unlike mise's default `http:nim` backend, which fails when a prebuilt archive is missing).
+- **Development & Nimony builds**: Install `ref:devel`, exact Git commits, or Nimony (`nimony`, `nimony-0.6.3`) directly.
+- **Compiler module imports**: Configures `path = "$nim"` in `config/nim.cfg` so tools that import `compiler/ast` or `compiler/options` work immediately.
 
 ---
 
-## Platform Support
+## Installation & Local Usage
 
-| Platform                        |   Prebuilt Binaries   | Source Build |  CI Coverage  |
-| :------------------------------ | :-------------------: | :----------: | :-----------: |
-| **Linux x86_64**                | ✅ Official & Nightly |      ✅      | Native runner |
-| **Linux ARM64**                 |   ✅ Nightly match    |      ✅      | Emulated QEMU |
-| **Linux ARMv7**                 |   ✅ Nightly match    |      ✅      | Emulated QEMU |
-| **macOS Apple Silicon (arm64)** |   ✅ Nightly match    |      ✅      | Native runner |
-| **macOS Intel (x86_64)**        |   ✅ Nightly match    |      ✅      | Native runner |
-| **Windows x86_64**              | ✅ Official & Nightly |      ❌      | Native runner |
+### With mise
 
-> _Note: On platforms without prebuilt official binaries (such as Linux ARMv7, or older Nim versions on macOS ARM64), `vfox-nim` automatically builds Nim from source, whereas the official mise `http:nim` backend will error out._
-
----
-
-## Quick Start
-
-### Using mise
-
-To use `vfox-nim`, specify the `vfox:` backend prefix:
+**CLI**:
 
 ```bash
-# Install and set global default via vfox-nim
+# Install and use globally via plugin URL:
 mise use -g vfox:elijahr/vfox-nim@latest
-```
 
-Alternatively, if you want the unqualified name `nim` in mise to resolve to `vfox-nim` instead of mise's built-in `http:nim` backend, register the plugin:
-
-```bash
-# Register plugin override
+# Or register as 'nim' to drop the prefix:
 mise plugin install nim https://github.com/elijahr/vfox-nim
-
-# Now `nim` resolves to vfox-nim
 mise use -g nim@latest
 ```
 
-Verify your installation:
+**In `mise.toml`**:
 
-```bash
-nim --version
-nimble --version
+```toml
+[tools]
+"vfox:elijahr/vfox-nim" = "2.2.10"
+# Or if registered via `mise plugin install nim`:
+# nim = "2.2.10"
 ```
 
-### Using vfox
+**Version Examples**:
 
 ```bash
-# Add plugin
-vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
+mise install nim@2.2.10                  # Official stable release
+mise install nim@ref:devel               # Nightly devel branch
+mise install nim@ref:1a2b3c4             # Specific Git commit
+mise install nim@nimony                  # Latest Nimony nightly
+mise install nim@nimony-0.6.3            # Nimony milestone
+mise install nim@nightly-0.6.3-b3806c1ce # Specific Nimony commit build
+```
 
-# Install and activate latest stable Nim
+---
+
+### With vfox
+
+**CLI**:
+
+```bash
+vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
 vfox install nim@latest
 vfox use -g nim@latest
 ```
 
-> [!TIP]
->
-> ### Declarative Nim CLI Tools with `vfox-nimble`
->
-> If you use tools like `nimlsp`, `c2nim`, `testament`, or `atlas`, consider adding the companion **[`vfox-nimble`](https://github.com/elijahr/vfox-nimble)** backend plugin.
->
-> While `vfox-nim` manages the Nim compiler and core SDK, `vfox-nimble` lets you declare and pin Nim CLI packages directly in your `mise.toml`:
->
-> ```toml
-> [tools]
-> "vfox:elijahr/vfox-nim" = "2.2.8"
-> "nimble:c2nim" = "latest"
-> "nimble:nimlsp" = "0.4.7"
-> ```
->
-> _(Or `nim = "2.2.8"` if registered as a plugin override via `mise plugin install nim`)_
->
-> This keeps your developer tooling isolated, version-controlled, and reproducible across teammates and CI runners.
+**In `.tool-versions`**:
+
+```text
+nim 2.2.10
+```
 
 ---
 
-## Installing Versions
+## GitHub Actions CI Matrix
 
-You can install specific releases, development branches, or exact commits:
+Use the composite GitHub Action to test across platforms and Nim versions:
 
-### Using mise
+```yaml
+name: CI
+on: [push, pull_request]
 
-```bash
-# Latest stable release
-mise install vfox:elijahr/vfox-nim@latest
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        nim: ["2.2.10", "ref:devel", "nimony"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
 
-# Specific release version
-mise install vfox:elijahr/vfox-nim@2.2.8
+      - name: Set up Nim
+        uses: elijahr/vfox-nim@main
+        with:
+          version: ${{ matrix.nim }}
 
-# Partial version prefix (resolves to latest matching release)
-mise install vfox:elijahr/vfox-nim@2.2
-mise install vfox:elijahr/vfox-nim@2
-
-# Nim development branch (uses prebuilt nightly if available, otherwise builds from source)
-mise install vfox:elijahr/vfox-nim@ref:devel
-
-# Specific release branch or git commit
-mise install vfox:elijahr/vfox-nim@ref:version-2-2
-mise install vfox:elijahr/vfox-nim@ref:1a2b3c4
+      - name: Run tests
+        shell: bash
+        run: |
+          nim --version
+          nimble test
 ```
 
-> **Note**: If you registered `vfox-nim` via `mise plugin install nim https://github.com/elijahr/vfox-nim`, you can use `nim@...` (e.g. `mise install nim@ref:devel`) directly. Without the plugin registered, bare `nim@...` commands in mise use its built-in `http:nim` backend.
-
-### Using vfox
-
-```bash
-# Latest stable release
-vfox install nim@latest
-
-# Specific release version
-vfox install nim@2.2.8
-
-# Development branch or commit
-vfox install nim@ref:devel
-vfox install nim@ref:1a2b3c4
-```
-
-### Nimony (NIF Toolchain)
-
-`vfox-nim` provides first-class support for [Nimony](https://github.com/nim-lang/nimony), the new Nim compiler and toolchain based on NIF (Nim Intermediate Format). Official prebuilt nightly binaries are downloaded directly from [`nim-lang/nimony-website`](https://github.com/nim-lang/nimony-website/releases) across Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64).
-
-```bash
-# Latest Nimony nightly
-mise install vfox:elijahr/vfox-nim@nimony
-vfox install nim@nimony-latest
-
-# Specific Nimony version or nightly
-mise install vfox:elijahr/vfox-nim@nimony-0.6.3
-vfox install nim@nightly-0.6.3-b3806c1ce
-```
-
-The Nimony toolchain includes `nimony`, `nimsem`, `shoggoth`, `nifler`, `nifmake`, `arkham`, `nifasm`, and automatically provisions a `bin/nim -> bin/nimony` symlink so standard `nim` commands work seamlessly.
-
-### Project Version Files
-
-In `mise.toml`, declare the tool using the `vfox:` prefix (or `nim` if registered via `mise plugin install`):
-
-```toml
-[tools]
-"vfox:elijahr/vfox-nim" = "2.2.8"
-```
-
-If registered via `mise plugin install nim`, standard `.nim-version` and `.tool-versions` files are also supported:
-
-```bash
-echo "2.2.8" > .nim-version
-mise install
-```
-
-> **Rate Limit Note**: The plugin queries the GitHub Releases API to resolve version tags and nightly binaries. In CI environments or behind shared NAT IPs, set `GITHUB_TOKEN` in your environment to prevent rate-limiting.
+_(If your repository already uses `mise.toml`, you can use `jdx/mise-action@v4` instead)._
 
 ---
 
 ## Configuration
 
-Control how the plugin installs Nim by setting `install_method`:
+Set `install_method` to control binary vs source installation:
 
-- **`auto`** (default): Uses official binaries first, falls back to matching nightlies, and automatically compiles from source if no prebuilt binary exists for your platform or version (in contrast to mise's built-in `http:nim` backend, which errors out when prebuilt binaries are unavailable).
-- **`binary`**: Prebuilt binaries only. Fails with an error if no prebuilt binary is available for your platform.
-- **`source`**: Compiles Nim from source using C bootstrap sources (`build_all.sh` / `koch`). Not supported on Windows.
+- `auto` (default): Download prebuilt binary; build from source if unavailable.
+- `binary`: Prebuilt binary only. Errors if no binary exists for your platform.
+- `source`: Compile from source using bootstrap C sources (Linux and macOS only).
 
-### Configuration Methods
-
-In `mise.toml`:
-
-```toml
-[tools]
-"vfox:elijahr/vfox-nim" = "2.2.8"
-
-[env]
-_."vfox:elijahr/vfox-nim" = { install_method = "binary" }
-# Or if registered as `nim`:
-# _.nim = { install_method = "binary" }
-```
-
-Or via environment variable in your shell or CI workflow:
+**Via environment variable**:
 
 ```bash
 export NIM_INSTALL_METHOD="binary"
 ```
 
----
-
-## Compiler Internals & Search Paths
-
-Some Nim tools and libraries import compiler internal modules, such as:
-
-```nim
-import compiler/[ast, idents, parser, options]
-```
-
-By default in standard tarballs, the compiler sources reside at `$SDK/compiler`, but are not on Nim's default library search path. Previously, packages importing compiler internals would either fail or cause Nimble to clone the entire Nim repository (~1.5 GB) and recompile the compiler from scratch.
-
-`vfox-nim` configures `path = "$nim"` in `config/nim.cfg` and creates a relative `lib/compiler` symlink on Unix during installation. Compiler modules resolve directly against the installed SDK out of the box, with no manual `--path` compiler flags required.
-
----
-
-## Companion Plugin: `vfox-nimble`
-
-Looking for declarative Nim CLI tool and package management? Pair `vfox-nim` with **[vfox-nimble](https://github.com/elijahr/vfox-nimble)**, a native mise backend plugin:
-
-```bash
-# Manage the Nim compiler and toolchain with vfox-nim
-mise use vfox:elijahr/vfox-nim@latest
-
-# Install and isolate Nimble CLI tools with vfox-nimble
-mise use nimble:c2nim@latest
-mise use nimble:nimlsp@latest
-```
-
----
-
-## Continuous Integration
-
-### Option 1: Using the `vfox-nim` GitHub Action (Easiest)
-
-`vfox-nim` provides a first-class composite GitHub Action for GitHub Actions workflows. It supports Linux, macOS, and Windows runners with automatic `vfox` bootstrapping:
-
-```yaml
-- uses: elijahr/vfox-nim@main
-  with:
-    version: "2.2.10" # or 'nimony', 'nimony-latest', 'ref:devel', etc.
-```
-
-#### Inputs
-
-| Input          | Description                                                                  | Default    |
-| :------------- | :--------------------------------------------------------------------------- | :--------- |
-| `version`      | Nim or Nimony version to install (`latest`, `2.2.10`, `nimony`, `ref:devel`) | `'latest'` |
-| `nim-version`  | Alias for `version` (drop-in compatibility with `setup-nim-action`)          | `''`       |
-| `vfox-version` | Version of `vfox` CLI to bootstrap if not present                            | `'1.0.11'` |
-
-### Option 2: Using `mise` (Recommended for multi-tool setups)
-
-`mise` provides first-class GitHub and Forgejo Actions support with built-in tool caching across Linux, macOS, and Windows.
-
-#### In GitHub Actions (Linux, macOS, Windows)
-
-##### Pattern A: With `mise.toml` in your repository (Recommended)
-
-In your repository `mise.toml`:
+**In `mise.toml`**:
 
 ```toml
-[tools]
-"vfox:elijahr/vfox-nim" = "2.2.8"
-```
-
-In `.github/workflows/ci.yml`:
-
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up mise & tools
-        uses: jdx/mise-action@v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          cache: true
-
-      - name: Verify & Test
-        shell: bash
-        run: |
-          nim --version
-          nimble test
-```
-
-##### Pattern B: Inline plugin declaration (Without repository `mise.toml`)
-
-```yaml
-- name: Set up mise & Nim
-  uses: jdx/mise-action@v4
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  with:
-    cache: true
-    plugins: |
-      nim https://github.com/elijahr/vfox-nim.git
-    tool_versions: |
-      nim 2.2.8
-```
-
-#### In Forgejo Actions (`act_runner` / Docker)
-
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: docker
-    container:
-      image: catthehacker/ubuntu:act-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies & mise
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git xz-utils
-          curl -fsSL https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
-
-      - name: Install Nim via vfox-nim & run tests
-        run: |
-          export MISE_GITHUB_ATTESTATIONS=0
-          mise plugin install nim https://github.com/elijahr/vfox-nim.git
-          mise use -g nim@2.2.8
-          nim --version
-          nimble test
-```
-
-### Option 3: Using standalone `vfox`
-
-#### In GitHub Actions (Linux, macOS, Windows)
-
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install vfox (Linux & macOS)
-        if: runner.os != 'Windows'
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" | sudo tee /etc/apt/sources.list.d/versionfox.list
-            sudo apt-get update && sudo apt-get install -y vfox
-          else
-            brew tap version-fox/tap && brew install vfox
-          fi
-
-      - name: Install vfox (Windows)
-        if: runner.os == 'Windows'
-        uses: MinoruSekine/setup-scoop@v5.0.1
-        with:
-          apps: vfox
-
-      - name: Install Nim via vfox
-        shell: bash
-        run: |
-          vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
-          vfox install nim@2.2.8
-          vfox use -g nim@2.2.8
-          eval "$(vfox activate bash)"
-          nim --version
-          nimble --version
-
-      # Windows requires runtime DLLs for HTTPS and SSL support in Nimble
-      - name: Install Nim Windows runtime DLLs
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest https://nim-lang.org/download/dlls.zip -OutFile dlls.zip
-          Expand-Archive dlls.zip -DestinationPath "$env:GITHUB_WORKSPACE\nim-dlls" -Force
-          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\nim-dlls"
-          Invoke-WebRequest https://curl.se/ca/cacert.pem -OutFile "$env:GITHUB_WORKSPACE\cacert.pem"
-          Add-Content $env:GITHUB_ENV "SSL_CERT_FILE=$env:GITHUB_WORKSPACE\cacert.pem"
-
-      - name: Run Tests
-        shell: bash
-        run: |
-          eval "$(vfox activate bash)"
-          nimble test
-```
-
-#### In Forgejo Actions (`act_runner` / Docker)
-
-```yaml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: docker
-    container:
-      image: catthehacker/ubuntu:act-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install vfox & Nim
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git xz-utils
-          echo "deb [trusted=yes] https://apt.fury.io/versionfox/ /" > /etc/apt/sources.list.d/versionfox.list
-          apt-get update && apt-get install -y vfox
-          vfox add --source https://github.com/elijahr/vfox-nim/archive/refs/heads/main.zip --alias nim
-          vfox install nim@2.2.8
-          vfox use -g nim@2.2.8
-          eval "$(vfox activate bash)"
-          nim --version
-          nimble --version
-          nimble test
+[env]
+_."vfox:elijahr/vfox-nim" = { install_method = "binary" }
 ```
 
 ---
 
-## Development
+## Companion Tool: `vfox-nimble`
 
-To contribute or run tests locally:
-
-```bash
-# 1. Trust the local mise configuration
-mise trust
-
-# 2. Link plugin to local development workspace
-mise plugin link --force nim .
-
-# 3. Run unit tests (busted)
-mise run test-unit
-
-# 4. Run static analysis and formatting checks
-mise run lint
-mise run format
-```
+To declare and manage project-local Nimble CLI tools (such as `nimlsp` or `c2nim`) in `mise.toml`, pair this with [vfox-nimble](https://github.com/elijahr/vfox-nimble).
 
 ---
 
