@@ -29,6 +29,10 @@ All notable changes to vfox-nim are documented here. Format follows
 - Fixed pre-commit stylua formatting across lua scripts and test specs.
 - Corrected Nimony documentation in README to accurately reflect the NIF toolchain.
 
+### Documentation
+
+- Simplified README with plain-English overview, copy-pasteable CLI and config examples for mise and vfox, and a complete multi-OS GitHub Actions CI version matrix.
+
 ## [0.2.2] - 2026-09-25
 
 ### Added
