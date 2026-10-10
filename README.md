@@ -151,9 +151,9 @@ vfox install nim@ref:devel
 vfox install nim@ref:1a2b3c4
 ```
 
-### Nimony (Nim 2.0 / NIF Toolchain)
+### Nimony (NIF Toolchain)
 
-`vfox-nim` provides first-class support for [Nimony](https://github.com/nim-lang/nimony), the next-generation Nim compiler and toolchain. Official prebuilt nightly binaries are downloaded directly from [`nim-lang/nimony-website`](https://github.com/nim-lang/nimony-website/releases) across Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64).
+`vfox-nim` provides first-class support for [Nimony](https://github.com/nim-lang/nimony), the new Nim compiler and toolchain based on NIF (Nim Intermediate Format). Official prebuilt nightly binaries are downloaded directly from [`nim-lang/nimony-website`](https://github.com/nim-lang/nimony-website/releases) across Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64).
 
 ```bash
 # Latest Nimony nightly

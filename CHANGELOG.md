@@ -6,17 +6,28 @@ All notable changes to vfox-nim are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
 ### Added
 
 - Support for Nimony nightly toolchain:
   - Added detection for versions such as `nimony`, `nimony-latest`, `ref:nimony`, and specific versions/nightlies like `nimony-0.6.3` or `nightly-0.6.3-b3806c1ce`.
   - Added GitHub release discovery against `nim-lang/nimony-website` for official prebuilt nightlies on Linux (x86_64, arm64), macOS (arm64), and Windows (x86_64).
   - Added archive restructuring and post-install configuration for Nimony layout, ensuring executable permissions on `bin/` and symlinking `bin/nim -> bin/nimony`.
-  - Expose `nimony-latest` and recent Nimony releases in `Available` hook.
+  - Expose `nimony-latest`, milestone versions (e.g. `nimony-0.6.3`), and top recent specific nightly builds in `Available` hook.
 - Composite GitHub Action (`action.yml`):
   - Provides a single-step GitHub Action (`uses: elijahr/vfox-nim@main`) supporting Linux, macOS, and Windows runners.
   - Automatically bootstraps `vfox` CLI if not already installed, packages and registers `vfox-nim`, and installs the requested Nim or Nimony version.
   - Exposes compiler binaries (`nim`, `nimble`, `nimony`) and `~/.nimble/bin` to `$GITHUB_PATH`.
+  - Added compatibility alias `nim-version` and normalized `stable` to `latest`.
+- Bare ref versions:
+  - Recognize bare `devel`, `nightly`, and `head` as ref versions for nightly binaries.
+
+### Fixed
+
+- Hardened direct tag fallback URL resolution for exact nightlies during GitHub API rate-limiting.
+- Fixed pre-commit stylua formatting across lua scripts and test specs.
+- Corrected Nimony documentation in README to accurately reflect the NIF toolchain.
 
 ## [0.2.2] - 2026-09-25
 
@@ -204,7 +215,8 @@ _Released via the **Release** workflow (manually dispatched from `main`)._
   suites (a real `nim` install end-to-end) — passes on `ubuntu-latest`, `macos-latest`,
   and `windows-latest`, and the Windows legs are blocking (not `continue-on-error`).
 
-[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/elijahr/vfox-nim/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/elijahr/vfox-nim/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/elijahr/vfox-nim/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/elijahr/vfox-nim/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/elijahr/vfox-nim/compare/v0.1.2...v0.2.0

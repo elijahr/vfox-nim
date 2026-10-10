@@ -105,11 +105,7 @@ function M.is_ref_version(version)
         return false
     end
     local v = version:lower()
-    return v:match("^ref:") ~= nil
-        or v == "devel"
-        or v == "nightly"
-        or v == "head"
-        or v:match("^version%-%d") ~= nil
+    return v:match("^ref:") ~= nil or v == "devel" or v == "nightly" or v == "head" or v:match("^version%-%d") ~= nil
 end
 
 -- Nimony detection and URL resolution
@@ -213,7 +209,8 @@ function M.find_nimony_url(version, os_name, arch)
         if not direct_tag:match("^nightly%-") then
             direct_tag = "nightly-" .. target_spec
         end
-        local asset_name = "nimony-" .. target_spec .. "-" .. platform_suffix
+        local raw_spec = target_spec:gsub("^nightly%-", "")
+        local asset_name = "nimony-" .. raw_spec .. "-" .. platform_suffix
         local direct_url = "https://github.com/nim-lang/nimony-website/releases/download/"
             .. direct_tag
             .. "/"
