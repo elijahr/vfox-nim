@@ -241,6 +241,43 @@ describe("Nimony support", function()
             assert.are.equal("nightly-0.6.3-b3806c1ce", tag)
         end)
 
+        it("resolves specific nightly tag with nimony- prefix e.g. nimony-0.6.3-b3806c1ce", function()
+            local url, tag = utils.find_nimony_url("nimony-0.6.3-b3806c1ce", "linux", "arm64")
+            assert.are.equal(
+                "https://github.com/nim-lang/nimony-website/releases/download/nightly-0.6.3-b3806c1ce/nimony-0.6.3-b3806c1ce-linux_arm64.tar.xz",
+                url
+            )
+            assert.are.equal("nightly-0.6.3-b3806c1ce", tag)
+        end)
+
+        it("resolves specific commit hash e.g. nimony-b3806c1ce", function()
+            local url, tag = utils.find_nimony_url("nimony-b3806c1ce", "macos", "arm64")
+            assert.are.equal(
+                "https://github.com/nim-lang/nimony-website/releases/download/nightly-0.6.3-b3806c1ce/nimony-0.6.3-b3806c1ce-macos_arm64.tar.xz",
+                url
+            )
+            assert.are.equal("nightly-0.6.3-b3806c1ce", tag)
+        end)
+
+        it("falls back to direct tag URL when API is rate-limited", function()
+            _G.http.get = function(_)
+                return { status_code = 403, body = "API rate limit exceeded" }, nil
+            end
+            local checked_urls = {}
+            utils.url_exists = function(url)
+                table.insert(checked_urls, url)
+                return true
+            end
+
+            local url, tag = utils.find_nimony_url("nightly-0.6.3-b3806c1ce", "linux", "x86_64")
+            local expected_url =
+                "https://github.com/nim-lang/nimony-website/releases/download/nightly-0.6.3-b3806c1ce/nimony-0.6.3-b3806c1ce-linux_amd64.tar.xz"
+            assert.are.equal(expected_url, url)
+            assert.are.equal("nightly-0.6.3-b3806c1ce", tag)
+            assert.are.equal(1, #checked_urls)
+            assert.are.equal(expected_url, checked_urls[1])
+        end)
+
         it("returns nil and helpful error for unsupported platform", function()
             local url, err = utils.find_nimony_url("nimony-latest", "macos", "x86_64")
             assert.is_nil(url)
@@ -359,6 +396,87 @@ describe("Nimony support", function()
             assert.is_true(has_latest)
             assert.is_true(has_063)
             assert.is_true(has_specific_nightly)
+        end)
+
+        it("caps recent nightlies at 5 when more than 5 releases are returned", function()
+            _G.http.get = function(opts)
+                if opts.url:match("nimony%-website/releases") then
+                    return { status_code = 200, body = "{}" }, nil
+                end
+                return { status_code = 200, body = '[{"name":"v2.2.4"}]' }, nil
+            end
+
+            _G.json.decode = function(str)
+                if str ~= '[{"name":"v2.2.4"}]' then
+                    return {
+                        { tag_name = "nightly-0.6.3-111111111" },
+                        { tag_name = "nightly-0.6.3-222222222" },
+                        { tag_name = "nightly-0.6.3-333333333" },
+                        { tag_name = "nightly-0.6.3-444444444" },
+                        { tag_name = "nightly-0.6.3-555555555" },
+                        { tag_name = "nightly-0.6.3-666666666" },
+                        { tag_name = "nightly-0.6.3-777777777" },
+                    }
+                end
+                return { { name = "v2.2.4" } }
+            end
+
+            dofile("hooks/available.lua")
+            local result = PLUGIN:Available(ctx)
+            local nightly_count = 0
+            for _, item in ipairs(result) do
+                if item.version:match("^nimony%-0%.6%.3%-%d+") then
+                    nightly_count = nightly_count + 1
+                end
+            end
+            assert.are.equal(5, nightly_count)
+        end)
+
+        it("falls back to nimony-latest and nimony-0.6.3 when nimony-website API errors", function()
+            _G.http.get = function(opts)
+                if opts.url:match("nimony%-website/releases") then
+                    return { status_code = 500, body = "error" }, "Server Error"
+                end
+                return { status_code = 200, body = '[{"name":"v2.2.4"}]' }, nil
+            end
+            _G.json.decode = function(_)
+                return { { name = "v2.2.4" } }
+            end
+
+            dofile("hooks/available.lua")
+            local result = PLUGIN:Available(ctx)
+            local has_latest, has_063 = false, false
+            for _, item in ipairs(result) do
+                if item.version == "nimony-latest" then
+                    has_latest = true
+                end
+                if item.version == "nimony-0.6.3" then
+                    has_063 = true
+                end
+            end
+            assert.is_true(has_latest)
+            assert.is_true(has_063)
+        end)
+
+        it("appends nimony versions after stable Nim releases so stable releases remain first", function()
+            _G.http.get = function(opts)
+                if opts.url:match("nimony%-website/releases") then
+                    return { status_code = 200, body = "{}" }, nil
+                end
+                return { status_code = 200, body = '[{"name":"v2.2.4"},{"name":"v2.2.2"}]' }, nil
+            end
+            _G.json.decode = function(str)
+                if str:match("2.2.4") then
+                    return { { name = "v2.2.4" }, { name = "v2.2.2" } }
+                end
+                return { { tag_name = "nightly-0.6.3-b3806c1ce" } }
+            end
+
+            dofile("hooks/available.lua")
+            local result = PLUGIN:Available(ctx)
+            assert.are.equal("2.2.4", result[1].version)
+            assert.are.equal("2.2.2", result[2].version)
+            assert.are.equal("nimony-latest", result[3].version)
         end)
     end)
 
