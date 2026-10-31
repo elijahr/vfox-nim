@@ -220,7 +220,7 @@ local function build_env_prefix()
     --               for dev hermeticity, exactly as before. HOME is expanded via
     --               os.getenv since SANITIZED_PATH is a literal Lua string.
     if IS_WINDOWS then
-        table.insert(parts, 'export PATH="/mingw64/bin:/usr/bin:$PATH";')
+        table.insert(parts, 'export PATH="/ucrt64/bin:/mingw64/bin:/usr/bin:$PATH";')
     elseif os.getenv("CI") then
         -- Preserve inherited PATH on CI; do not emit an export PATH line.
     else
