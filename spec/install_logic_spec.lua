@@ -5,6 +5,7 @@ local M = require("lib.nim_utils")
 local fixture = require("spec.fixtures.nim_commit_2_2_4")
 
 local EXPECTED_SHA = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+local IS_WINDOWS_HOST = package.config:sub(1, 1) == "\\"
 local tmp_counter = 0
 
 describe("install logic (Tier II)", function()
@@ -44,9 +45,10 @@ describe("install logic (Tier II)", function()
         -- On Unix, use os.tmpname(). On Windows under MSYS2 UCRT64 (mingw-w64-ucrt-x86_64-lua51),
         -- PUC Lua 5.1.5's os.tmpname() calls UCRT tmpnam() with a 16-byte stack buffer (L_tmpnam)
         -- while UCRT writes the full %TEMP% path (>50 bytes), causing a stack buffer overflow
-        -- (SIGSEGV / exit 139). Construct a unique path under %TEMP% directly on Windows instead.
+        -- (SIGSEGV / exit 139). Use IS_WINDOWS_HOST (package.config) rather than M.is_windows()
+        -- because helpers.reset_mocks() sets _G.RUNTIME.osType = "Linux".
         local tmp_name
-        if M.is_windows() then
+        if IS_WINDOWS_HOST then
             tmp_counter = tmp_counter + 1
             local base = (orig_getenv("TEMP") or orig_getenv("TMP") or "."):gsub("\\", "/")
             tmp_name = base .. "/vfox-nim-spec-" .. os.time() .. "-" .. tmp_counter
@@ -55,7 +57,7 @@ describe("install logic (Tier II)", function()
             os.remove(tmp_name)
         end
         tmp_home = tmp_name .. "-vfox-nim-home"
-        if M.is_windows() then
+        if IS_WINDOWS_HOST then
             os.execute('mkdir "' .. tmp_home:gsub("/", "\\") .. '\\.cache\\vfox-nim"')
         else
             os.execute("mkdir -p '" .. tmp_home .. "/.cache/vfox-nim'")
@@ -84,7 +86,7 @@ describe("install logic (Tier II)", function()
         os.getenv = orig_getenv
         assert.is_truthy(orig_home) -- sanity: original HOME captured
         if tmp_home then
-            if M.is_windows() then
+            if IS_WINDOWS_HOST then
                 os.execute('rmdir /s /q "' .. tmp_home:gsub("/", "\\") .. '"')
             else
                 os.execute("rm -rf '" .. tmp_home .. "'")
