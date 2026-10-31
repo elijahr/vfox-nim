@@ -5,6 +5,7 @@ local M = require("lib.nim_utils")
 local fixture = require("spec.fixtures.nim_commit_2_2_4")
 
 local EXPECTED_SHA = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+local tmp_counter = 0
 
 describe("install logic (Tier II)", function()
     local orig_popen, orig_http_get, orig_json_decode, orig_url_exists
@@ -40,19 +41,19 @@ describe("install logic (Tier II)", function()
         -- remove it and use its path as a fresh-directory base instead.
         orig_getenv = os.getenv
         orig_home = orig_getenv("HOME")
-        -- os.tmpname() is "/"-rooted on Unix (no backslashes) but on Windows returns a
-        -- bare leaf like "\s5a2." rooted at the drive cwd. Normalize in two ordered
-        -- steps to match test/vfox-integration_spec.lua's tmpname() helper: (a) if the
-        -- raw name is leading-backslash-rooted and TEMP is set, prepend %TEMP% for an
-        -- absolute path; (b) convert remaining backslashes to forward slashes so the
-        -- path interpolates safely into the single-quoted POSIX `mkdir -p`/`rm -rf`
-        -- shell commands below. Both steps are no-ops on Unix.
-        local tmp_name = os.tmpname()
-        if tmp_name:sub(1, 1) == "\\" and orig_getenv("TEMP") then
-            tmp_name = orig_getenv("TEMP") .. tmp_name
+        -- On Unix, use os.tmpname(). On Windows under MSYS2 UCRT64 (mingw-w64-ucrt-x86_64-lua51),
+        -- PUC Lua 5.1.5's os.tmpname() calls UCRT tmpnam() with a 16-byte stack buffer (L_tmpnam)
+        -- while UCRT writes the full %TEMP% path (>50 bytes), causing a stack buffer overflow
+        -- (SIGSEGV / exit 139). Construct a unique path under %TEMP% directly on Windows instead.
+        local tmp_name
+        if M.is_windows() then
+            tmp_counter = tmp_counter + 1
+            local base = (orig_getenv("TEMP") or orig_getenv("TMP") or "."):gsub("\\", "/")
+            tmp_name = base .. "/vfox-nim-spec-" .. os.time() .. "-" .. tmp_counter
+        else
+            tmp_name = os.tmpname()
+            os.remove(tmp_name)
         end
-        tmp_name = tmp_name:gsub("\\", "/")
-        os.remove(tmp_name)
         tmp_home = tmp_name .. "-vfox-nim-home"
         if M.is_windows() then
             os.execute('mkdir "' .. tmp_home:gsub("/", "\\") .. '\\.cache\\vfox-nim"')

@@ -124,6 +124,10 @@ jobs:
         uses: jdx/mise-action@v5
         with:
           install: false
+          # mise >=2026.10.16 switched vfox .zip extraction to zip 9.0.5, which panics
+          # on Windows when extracting nim-2.2.4_x64.zip ("end byte index 3 is not a
+          # char boundary; it is inside 'ä'"). Pin 2026.10.15 until fixed upstream.
+          version: "2026.10.15"
 
       - name: Run mise integration tests (Unix)
         if: runner.os != 'Windows'
